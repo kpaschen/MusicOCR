@@ -79,6 +79,27 @@ void makeCornerConfig(musicocr::CornerConfig *config) {
   config->houghMaxLineGap = houghMaxLineGap;
 }
 
+void makeSheetConfig(musicocr::SheetConfig *config) {
+  if (gridLineGaussianKernel % 2 == 0) {
+    gridLineGaussianKernel += 1;
+  }  
+  config->gaussianKernel = gaussianKernel;
+  config->thresholdValue = (double)gridLineThresholdValue/255.0;
+  config->thresholdType = gridLineThresholdType + (gridLineUseOtsu ? THRESH_OTSU : 0);
+  config->cannyMin = gridLineCannyMin;
+  config->cannyMax = gridLineCannyMax;
+  if (gridLineSobel % 2 == 0) {
+    gridLineSobel++;
+  }
+  if (gridLineSobel < 3) { gridLineSobel = 3; }
+  if (gridLineSobel > 7) { gridLineSobel = 7; }
+  config->sobel = gridLineSobel;
+  config->l2Gradient = (gridLineL2Gradient != 0);
+  config->houghThreshold = gridLineHoughThreshold;
+  config->houghMinLineLength = gridLineHoughMinLinLength;
+  config->houghMaxLineGap = gridLineHoughMaxLineGap;
+}
+
 void onTrackbar(int, void *) {
   if (tuningCornerDetection) {
     musicocr::CornerConfig cornerConfig;
@@ -129,28 +150,12 @@ void onTrackbar(int, void *) {
     imshow("bla", dst);
   }
   if (tuningGridLineDetection) {
-    Mat tmp;
-    if (gridLineGaussianKernel % 2 == 0) {
-      gridLineGaussianKernel += 1;
-    }
-    if (gridLineSobel % 2 == 0) {
-      gridLineSobel += 1;
-    }
-    if (gridLineSobel > 7) gridLineSobel = 7;
+    musicocr::SheetConfig config;
+    makeSheetConfig(&config);
 
-    GaussianBlur(warped, tmp, 
-                 Size(gridLineGaussianKernel, gridLineGaussianKernel),
-                 0, 0);
-    threshold(tmp, tmp, gridLineThresholdValue, 255,
-              gridLineThresholdType + (gridLineUseOtsu ? THRESH_OTSU : 0));
-    Canny(tmp, tmp, gridLineCannyMin, gridLineCannyMax, gridLineSobel,
-          (gridLineL2Gradient != 0));
+    musicocr::Sheet sheet(config);
 
-    imshow("Canny", tmp);
-
-    vector<Vec4i> lines;
-    HoughLinesP(tmp, lines, 1, CV_PI/180.0, gridLineHoughThreshold,
-                gridLineHoughMinLinLength, gridLineHoughMaxLineGap);
+    vector<Vec4i> lines = sheet.find_lines(warped);
     {
       bool horizontalp = musicocr::CornerFinder::mostLinesAreHorizontal(lines);
 
@@ -158,69 +163,19 @@ void onTrackbar(int, void *) {
         cout << "should rotate this image" << endl;
         cv::rotate(warped, warped, cv::ROTATE_90_COUNTERCLOCKWISE);
         imshow("Warped", warped);
-        cv::rotate(tmp, tmp, cv::ROTATE_90_COUNTERCLOCKWISE);
-        // Could also swap coordinates on lines if that's more efficient.
-        HoughLinesP(tmp, lines, 1, CV_PI/180.0, gridLineHoughThreshold,
-                    gridLineHoughMinLinLength, gridLineHoughMaxLineGap);
+        // Could swap coordinates on lines if that's more efficient.
+        // Alternatively, move the decision to rotate into the sheet class
+        // and have sheet rotate warped.
+        lines = sheet.find_lines(warped);
       }
     }
     Mat cdst;
     cvtColor(warped, cdst, COLOR_GRAY2BGR);
-    std::vector<cv::Vec4i> horizontalLines;
-    std::vector<cv::Vec4i> verticalLines;
-    for (size_t i = 0; i < lines.size(); i++) {
-        const Vec4i l = lines[i];
-        const short h = musicocr::lineIsHorizontal(l);
-        auto colour = Scalar(255, 255, 255);
-        if (h == 0) {
-            colour = Scalar(0, 255, 0);  // probably vertical
-            verticalLines.push_back(l);
-        } else if (h == 1) {
-            colour = Scalar(255, 0, 0);  // probably horizontal
-            horizontalLines.push_back(l);
-        } // else: neither, leave it white
-        line(cdst, Point(l[0], l[1]), Point(l[2], l[3]), colour, 2);
-    }
-    imshow("hough", cdst);
+    sheet.analyseLines(lines, cdst);
 
-    std::sort(horizontalLines.begin(), horizontalLines.end(), musicocr::moreTop);
-
-    // Now go over the horizontal lines and group them.
-    Mat clines;
-    cvtColor(warped, clines, COLOR_GRAY2BGR);
-    vector<musicocr::SheetLine> sheetLines;
-    std::sort(horizontalLines.begin(), horizontalLines.end(), musicocr::moreTop);
-
-    musicocr::SheetLine::collectSheetLines(horizontalLines, &sheetLines, clines);
-
-    // Now we have all the sheetlines, get the sheet to compute the
-    // left/right margins.
-    std::pair<int, int> leftRight = musicocr::Sheet::overallLeftRight(sheetLines);
-    for (auto& sheetLine : sheetLines) {
-      sheetLine.updateBoundingBox(leftRight, clines);
-    }
-
-    // Go over vertical lines, skipping those outside sheet margins.
-    // See which can be combined.
-    std::vector<cv::Vec4i> sortedVerticalLines;
-    for (const auto& v : verticalLines) {
-      if ((v[0] < leftRight.first && v[2] < leftRight.first) ||
-          (v[0] > leftRight.second && v[2] > leftRight.second)) {
-        continue;  // skip, it's outside the margins
-      }
-      // could probably use std::set and moreLeft as the comparator
-      // to avoid the extra sort.
-      sortedVerticalLines.push_back(v);
-    }
-    std::sort(sortedVerticalLines.begin(), sortedVerticalLines.end(),
-              musicocr::moreLeft);
-
-    musicocr::Sheet sheet;
- 
-    sheet.initLineGroups(sortedVerticalLines, sheetLines, clines);
     sheet.printSheetInfo();
 
-    imshow("Grid", clines);
+    imshow("Grid", cdst);
   }
 }
 
@@ -290,7 +245,7 @@ if (tuningGridLineDetection) {
 }
 
 int main(int argc, char** argv) {
-  tuningGridLineDetection = true;
+  // tuningGridLineDetection = true;
   // tuningCornerDetection = true;
   if (argc != 2) {
    cerr << "display_image.out <Path to Image>";
@@ -315,6 +270,7 @@ int main(int argc, char** argv) {
 
   int input;
 
+  {
   musicocr::CornerFinder cornerFinder;
   vector<Vec4i> lines = cornerFinder.find_lines(gray);
   vector<Point> corners = cornerFinder.find_corners(lines, gray.cols, gray.rows);
@@ -327,19 +283,43 @@ int main(int argc, char** argv) {
 
   // Somehow warping doesn't help that much, just cropping for now.
   imshow("Warped", warped);
+  input = waitKeyEx(0);
 
   if (tuningGridLineDetection) {
     namedWindow("Canny", WINDOW_AUTOSIZE);
     namedWindow("hough", WINDOW_AUTOSIZE);
-    namedWindow("Grid", WINDOW_AUTOSIZE);
+  }
   }
 
   // Now 'warped' contains the adjusted image, in grayscale.
   // Identify the printed horizontal lines, as well as any vertical lines.
-  // Horizontal lines need to be grouped into groups of five. Vertical lines
-  // go through one or more groups of horizontal lines.
+  {
+  musicocr::Sheet sheet;
 
+  vector<Vec4i> lines = sheet.find_lines(warped);
+  {
+    bool horizontalp = musicocr::CornerFinder::mostLinesAreHorizontal(lines);
 
+    if (!horizontalp) {
+      cout << "should rotate this image" << endl;
+      cv::rotate(warped, warped, cv::ROTATE_90_COUNTERCLOCKWISE);
+      imshow("Warped", warped);
+      // Could swap coordinates on lines if that's more efficient.
+      // Alternatively, move the decision to rotate into the sheet class
+      // and have sheet rotate warped.
+      lines = sheet.find_lines(warped);
+    }
+  }
+
+  Mat cdst;
+  cvtColor(warped, cdst, COLOR_GRAY2BGR);
+
+  sheet.analyseLines(lines, cdst);
+  sheet.printSheetInfo();
+
+  namedWindow("Grid", WINDOW_AUTOSIZE);
+  imshow("Grid", cdst);
+  }
   input = waitKeyEx(0);
   return 0;
 }

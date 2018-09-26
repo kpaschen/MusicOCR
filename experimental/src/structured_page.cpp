@@ -10,15 +10,65 @@ namespace musicocr {
 using namespace std;
 using namespace cv;
 
+vector<Vec4i> Sheet::find_lines(const Mat& warped) const {
+  Mat tmp;
+  GaussianBlur(warped, tmp, Size(config.gaussianKernel,
+               config.gaussianKernel), 0, 0);
+  threshold(tmp, tmp, config.thresholdValue, 255, config.thresholdType);
+  Canny(tmp, tmp, config.cannyMin, config.cannyMax, config.sobel,
+        config.l2Gradient);
+
+  vector<Vec4i> lines;
+  HoughLinesP(tmp, lines, 1, CV_PI/180.0, config.houghThreshold,
+              config.houghMinLineLength, config.houghMaxLineGap);
+
+  return lines;
+}
+
+
 void Sheet::printSheetInfo() const {
   cout << "Sheet has " << size() << " line groups." << endl;
-  if (voices_ > 0) {
-    cout << "set number of voices: " << voices_ << endl;
+  if (config.voices > 0) {
+    cout << "set number of voices: " << config.voices << endl;
   } else {
     for (const auto& g : lineGroups) {
       cout << "line group with " << g->size() << " voices." << endl;
     }
   }
+}
+
+void Sheet::analyseLines(const vector<Vec4i>& lines, const Mat& clines) {
+  vector<Vec4i> horizontal;
+  vector<Vec4i> vertical;
+  for (const auto& l : lines) {
+    const short h = lineIsHorizontal(l);
+    if (h == 1) horizontal.push_back(l);
+    else if (h == 0) vertical.push_back(l);
+  }
+
+  vector<SheetLine> sheetLines;
+  std::sort(horizontal.begin(), horizontal.end(), moreTop);
+  SheetLine::collectSheetLines(horizontal, &sheetLines, clines);
+  std::pair<int, int> leftRight = overallLeftRight(sheetLines);
+  for (auto& sl : sheetLines) {
+    sl.updateBoundingBox(leftRight, clines);
+  }
+
+  // Go over vertical lines, skipping those outside sheet margins.
+  std::vector<cv::Vec4i> sortedVerticalLines;
+  for (const auto& v : vertical) {
+    if ((v[0] < leftRight.first && v[2] < leftRight.first) ||
+        (v[0] > leftRight.second && v[2] > leftRight.second)) {
+      continue;  // skip, it's outside the margins
+    }
+    // could probably use std::set and moreLeft as the comparator
+    // to avoid the extra sort.
+    sortedVerticalLines.push_back(v);
+  }
+  std::sort(sortedVerticalLines.begin(), sortedVerticalLines.end(),
+            musicocr::moreLeft);
+
+   initLineGroups(sortedVerticalLines, sheetLines, clines);
 }
 
 void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
@@ -27,9 +77,9 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
   LineGroup *group = new LineGroup();
   addLineGroup(group);
 
-  if (voices_ > 0) {
+  if (config.voices > 0) {
     for (const auto& l : sheetLines) {
-      if (group->size() >= voices_) {
+      if (group->size() >= config.voices) {
         group = new LineGroup();
         addLineGroup(group);
       }
@@ -42,11 +92,11 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
   for (const auto& l : sheetLines) {
     bool startNewGroup = false;
     if (group->size() == 4) {
-       cout << "start new group: already four voices." << endl;
+       // cout << "start new group: already four voices." << endl;
        startNewGroup = true;
     }
     else if (group->size() > 0 && crossings.size() == 0) {
-      cout << "start new group: crossings is empty." << endl; 
+      // cout << "start new group: crossings is empty." << endl; 
       startNewGroup = true;
     }
     // Compute newCrossings and intersection count in any case.
@@ -64,8 +114,8 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
       }
     }
     // now we have newCrossings and intersectSize
-    cout << "Found " << newCrossings.size() << " crossings and "
-         << intersectSize << " common crossings." << endl;
+    //cout << "Found " << newCrossings.size() << " crossings and "
+    //     << intersectSize << " common crossings." << endl;
     // There's already a line, and there are crossings.
     if (group->size() > 0 && crossings.size() > 0) {
       // 2 may be too low a threshold.
@@ -128,7 +178,7 @@ SheetLine::SheetLine(const vector<Vec4i>& l, const Mat& wholePage) {
   Vec4i topLine = TopLine(lines); 
 
   const int heightDiff = topLine[1] - topLine[3];
-  cout << "height diff: " << heightDiff << endl;
+  // cout << "height diff: " << heightDiff << endl;
 
   line(wholePage, Point(topLine[0], topLine[1]), Point(topLine[2], topLine[3]),
        Scalar(255, 255, 255), 5);

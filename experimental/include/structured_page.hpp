@@ -11,10 +11,26 @@ namespace musicocr {
 class SheetLine;
 class LineGroup;
 
+struct SheetConfig {
+  int voices = 0; // 0: determine algorithmically
+  int gaussianKernel = 9; // 7 or 9?
+  double thresholdValue = 0.0; 
+  int thresholdType = 3;  // no OTSU
+  int cannyMin = 80;
+  int cannyMax = 121;
+  int sobel = 5;
+  bool l2Gradient = false;
+  int houghThreshold = 82;
+  int houghMinLineLength = 23;
+  int houghMaxLineGap = 15;
+};
+
 class Sheet {
  public:
-   Sheet() : voices_(0) {}
-   Sheet(int voices) : voices_(voices) {}
+   Sheet(const SheetConfig& c) : config(c) {}
+   Sheet() {}
+
+   std::vector<cv::Vec4i> find_lines(const cv::Mat& warped) const;
 
    // Determine general left/right margins.
    static std::pair<int, int> overallLeftRight(const std::vector<SheetLine>&);
@@ -27,16 +43,17 @@ class Sheet {
      return lineGroups.size();
    }
 
+   void analyseLines(const std::vector<cv::Vec4i>&, const cv::Mat&);
+   void printSheetInfo() const; 
+
+ private:
    void initLineGroups(const std::vector<cv::Vec4i>& verticalLines,
                        const std::vector<SheetLine>& sheetLines,
                        const cv::Mat& clines);
 
-   void printSheetInfo() const; 
-
- private:
    Sheet(const Sheet&) = delete;
    std::vector<std::unique_ptr<LineGroup>> lineGroups;
-   int voices_;  // 0: determine based on layout.
+   SheetConfig config;
 };
 
 class LineGroup {
