@@ -4,14 +4,21 @@
 #include <opencv2/opencv.hpp>
 
 #include "corners.hpp"
+#include "structured_page.hpp"
 
 using namespace cv;
 using namespace std;
 
-Mat gray;
-int gaussianKernel = 15;
+Mat gray, warped;
+
+bool tuningCornerDetection = false;
+bool tuningHarrisCorners = false;
+bool tuningGridLineDetection = false;
+
+// Only needed if tuning corner detection
+int gaussianKernel = 3;
 int thresholdValue = 0.0;
-int thresholdType = THRESH_BINARY;
+int thresholdType = 4;
 int useOtsu = 1;  // only true or false
 int cannyMin = 80;
 int cannyMax = 90;
@@ -23,6 +30,26 @@ int houghThreshold = 100;
 int houghMinLinLength = 50;
 int houghMaxLineGap = 15;
 
+// Only needed if tuning harris corner detection
+int blockSize = 2;
+int apertureSize = 3;
+int k = 4;
+int harrisThreshold = 200;
+
+// Only needed if tuning grid line detection
+int gridLineGaussianKernel = 9;  // 7 or 9 ...
+int gridLineThresholdValue = 0.0;
+int gridLineThresholdType = 3;
+int gridLineUseOtsu = 0;
+int gridLineCannyMin = 80;
+int gridLineCannyMax = 121;
+int gridLineSobel = 5;
+int gridLineL2Gradient = 0;
+int gridLineHoughThreshold = 82;
+int gridLineHoughMinLinLength = 23;
+int gridLineHoughMaxLineGap = 15;
+
+// Only needed if tuning corner detection
 void makeCornerConfig(musicocr::CornerConfig *config) {
   if (gaussianKernel % 2 == 0) {
     gaussianKernel += 1;
@@ -43,52 +70,162 @@ void makeCornerConfig(musicocr::CornerConfig *config) {
   }
   config->sobelKernel = sobelKernel;
   config->l2gradient = (l2gradient != 0);
-  if (houghResolution < 1) { houghResolution = 1; }
+  if (houghResolution < 1.0) { houghResolution = 1.0; }
   config->houghResolution = houghResolution;
-  config->houghResolutionRad = houghResolutionRad * CV_PI / 180;
-  if (config->houghResolutionRad < 1) { config->houghResolutionRad = 1; }
+  config->houghResolutionRad = (double)houghResolutionRad * CV_PI / 180.0;
+  if (config->houghResolutionRad < 1.0) { config->houghResolutionRad = 1.0; }
   config->houghThreshold = houghThreshold;
   config->houghMinLinLength = houghMinLinLength;
   config->houghMaxLineGap = houghMaxLineGap;
 }
 
-musicocr::CornerConfig lastConfig;
-
 void onTrackbar(int, void *) {
-  makeCornerConfig(&lastConfig);
-  musicocr::CornerFinder cornerFinder(lastConfig);
+  if (tuningCornerDetection) {
+    musicocr::CornerConfig cornerConfig;
+    makeCornerConfig(&cornerConfig);
+    musicocr::CornerFinder cornerFinder(cornerConfig);
+  
+    vector<Vec4i> lines = cornerFinder.find_lines(gray);
+    Mat cdst;
+    cvtColor(gray, cdst, COLOR_GRAY2BGR);
 
-  vector<Vec4i> lines = cornerFinder.find_lines(gray);
+    vector<Point> corners = cornerFinder.find_corners(lines, gray.cols, gray.rows);
+    line(cdst, corners[0], corners[1], Scalar(0, 126, 0), 3);   // top
+    line(cdst, corners[1], corners[2], Scalar(0, 255, 0), 3);   // right
+    line(cdst, corners[2], corners[3], Scalar(0, 0, 126), 3);   // bottom
+    line(cdst, corners[3], corners[0], Scalar(0, 0, 255), 3);   // left
+    imshow("Display Image", cdst);
 
-  Mat cdst;
-  cvtColor(gray, cdst, COLOR_GRAY2BGR);
-  for (size_t i = 0; i < lines.size(); i++) {
-     Vec4i l = lines[i];
-     line(cdst, Point(l[0], l[1]), Point(l[2], l[3]),
-          Scalar(255, 0, 0), 2);
+  // Crop to corners.
+  Rect c(corners[0], corners[2]);
+  rectangle(cdst, corners[0], corners[2], Scalar(255, 255, 255), 6);
+
+  warped = Mat(gray, c);
+  // somehow just cropping is better than warping most of the time.
+  //warped = Mat::zeros(cropped.rows, cropped.cols, cropped.type());
+  //cornerFinder.adjustToCorners(cropped, warped, corners);
+
+  imshow("Warped", warped);
   }
 
-  vector<Point> corners = cornerFinder.find_corners(lines, gray.cols, gray.rows);
-  line(cdst, corners[0], corners[1], Scalar(0, 126, 0), 3);   // top
-  line(cdst, corners[1], corners[2], Scalar(0, 255, 0), 3);   // right
-  line(cdst, corners[2], corners[3], Scalar(0, 0, 126), 3);   // bottom
-  line(cdst, corners[3], corners[0], Scalar(0, 0, 255), 3);   // left
-  imshow("Display Image", cdst);
-
-  // Get a perspective transform using the corners and apply it.
-  Mat warped = Mat::zeros(gray.rows, gray.cols, gray.type());
-  cornerFinder.adjustToCorners(gray, warped, corners);
-
-  // Then rotate counterclockwise by 90 degress if !horizontalp,
-  bool horizontalp = cornerFinder.mostLinesAreHorizontal(lines);
-  if (!horizontalp) {
-    cout << "mostly vertical, should flip " << endl;
-    cv::rotate(warped, warped, cv::ROTATE_90_COUNTERCLOCKWISE);
+  if (tuningHarrisCorners) {
+    Mat dst = Mat::zeros(gray.size(), CV_32FC1);
+    if (apertureSize % 2 == 0) {
+      apertureSize += 1;
+    }
+    if (apertureSize > 31) {
+      apertureSize = 31;
+    }  
+    cornerHarris(gray, dst, blockSize, apertureSize, (double)k/100.0, BORDER_DEFAULT);
+    // does this need to be normalised?
+    for (int j = 0; j < dst.rows; j++) {
+      for (int i = 0; i < dst.cols; i++) {
+        if ((int)dst.at<float>(j, i) > harrisThreshold) {
+          circle(dst, Point(i,j), 5, Scalar(0, 0, 0), 2, 8, 0); 
+        }
+      }
+    }
+    namedWindow("bla", WINDOW_AUTOSIZE);
+    imshow("bla", dst);
   }
-  imshow("Original Image", warped);
+  if (tuningGridLineDetection) {
+    Mat tmp;
+    if (gridLineGaussianKernel % 2 == 0) {
+      gridLineGaussianKernel += 1;
+    }
+    if (gridLineSobel % 2 == 0) {
+      gridLineSobel += 1;
+    }
+    if (gridLineSobel > 7) gridLineSobel = 7;
+
+    GaussianBlur(warped, tmp, 
+                 Size(gridLineGaussianKernel, gridLineGaussianKernel),
+                 0, 0);
+    threshold(tmp, tmp, gridLineThresholdValue, 255,
+              gridLineThresholdType + (gridLineUseOtsu ? THRESH_OTSU : 0));
+    Canny(tmp, tmp, gridLineCannyMin, gridLineCannyMax, gridLineSobel,
+          (gridLineL2Gradient != 0));
+
+    imshow("Canny", tmp);
+
+    vector<Vec4i> lines;
+    HoughLinesP(tmp, lines, 1, CV_PI/180.0, gridLineHoughThreshold,
+                gridLineHoughMinLinLength, gridLineHoughMaxLineGap);
+    {
+      bool horizontalp = musicocr::CornerFinder::mostLinesAreHorizontal(lines);
+
+      if (!horizontalp) {
+        cout << "should rotate this image" << endl;
+        cv::rotate(warped, warped, cv::ROTATE_90_COUNTERCLOCKWISE);
+        imshow("Warped", warped);
+        cv::rotate(tmp, tmp, cv::ROTATE_90_COUNTERCLOCKWISE);
+        // Could also swap coordinates on lines if that's more efficient.
+        HoughLinesP(tmp, lines, 1, CV_PI/180.0, gridLineHoughThreshold,
+                    gridLineHoughMinLinLength, gridLineHoughMaxLineGap);
+      }
+    }
+    Mat cdst;
+    cvtColor(warped, cdst, COLOR_GRAY2BGR);
+    std::vector<cv::Vec4i> horizontalLines;
+    std::vector<cv::Vec4i> verticalLines;
+    for (size_t i = 0; i < lines.size(); i++) {
+        const Vec4i l = lines[i];
+        const short h = musicocr::lineIsHorizontal(l);
+        auto colour = Scalar(255, 255, 255);
+        if (h == 0) {
+            colour = Scalar(0, 255, 0);  // probably vertical
+            verticalLines.push_back(l);
+        } else if (h == 1) {
+            colour = Scalar(255, 0, 0);  // probably horizontal
+            horizontalLines.push_back(l);
+        } // else: neither, leave it white
+        line(cdst, Point(l[0], l[1]), Point(l[2], l[3]), colour, 2);
+    }
+    imshow("hough", cdst);
+
+    std::sort(horizontalLines.begin(), horizontalLines.end(), musicocr::moreTop);
+
+    // Now go over the horizontal lines and group them.
+    Mat clines;
+    cvtColor(warped, clines, COLOR_GRAY2BGR);
+    vector<musicocr::SheetLine> sheetLines;
+    std::sort(horizontalLines.begin(), horizontalLines.end(), musicocr::moreTop);
+
+    musicocr::SheetLine::collectSheetLines(horizontalLines, &sheetLines, clines);
+
+    // Now we have all the sheetlines, get the sheet to compute the
+    // left/right margins.
+    std::pair<int, int> leftRight = musicocr::Sheet::overallLeftRight(sheetLines);
+    for (auto& sheetLine : sheetLines) {
+      sheetLine.updateBoundingBox(leftRight, clines);
+    }
+
+    // Go over vertical lines, skipping those outside sheet margins.
+    // See which can be combined.
+    std::vector<cv::Vec4i> sortedVerticalLines;
+    for (const auto& v : verticalLines) {
+      if ((v[0] < leftRight.first && v[2] < leftRight.first) ||
+          (v[0] > leftRight.second && v[2] > leftRight.second)) {
+        continue;  // skip, it's outside the margins
+      }
+      // could probably use std::set and moreLeft as the comparator
+      // to avoid the extra sort.
+      sortedVerticalLines.push_back(v);
+    }
+    std::sort(sortedVerticalLines.begin(), sortedVerticalLines.end(),
+              musicocr::moreLeft);
+
+    musicocr::Sheet sheet;
+ 
+    sheet.initLineGroups(sortedVerticalLines, sheetLines, clines);
+    sheet.printSheetInfo();
+
+    imshow("Grid", clines);
+  }
 }
 
 void setupTrackbars(const string& windowName) {
+if (tuningCornerDetection) {
   // Slider for the Gaussian Blur
   // The kernel size has to be an odd number. 5 works ok.
   createTrackbar("Gaussian Kernel Size", windowName, &gaussianKernel,
@@ -118,9 +255,43 @@ void setupTrackbars(const string& windowName) {
                  100, onTrackbar);
   createTrackbar("Hough Max Line Gap (P)", windowName, &houghMaxLineGap,
                  100, onTrackbar);
+
+}
+
+if (tuningHarrisCorners) {
+  // sliders for harris
+  createTrackbar("harris block size", windowName, &blockSize, 10, onTrackbar);
+  createTrackbar("harris aperture size", windowName, &apertureSize, 10, onTrackbar);
+  createTrackbar("harris k", windowName, &k, 100, onTrackbar);
+  createTrackbar("harris threshold", windowName, &harrisThreshold, 400, onTrackbar);
+}
+if (tuningGridLineDetection) {
+  createTrackbar("grid line gaussian kernel", windowName,
+     &gridLineGaussianKernel, 15, onTrackbar);
+  createTrackbar("grid line threshold", windowName,
+     &gridLineThresholdValue, 100, onTrackbar);
+  createTrackbar("grid line threshold type", windowName,
+     &gridLineThresholdType, 4, onTrackbar);
+  createTrackbar("grid line otsu", windowName,
+     &gridLineUseOtsu, 1, onTrackbar);
+  createTrackbar("grid line canny min", windowName,
+     &gridLineCannyMin, 255, onTrackbar);
+  createTrackbar("grid line canny max", windowName,
+     &gridLineCannyMax, 255, onTrackbar);
+  createTrackbar("grid line sobel", windowName,
+     &gridLineSobel, 7, onTrackbar);
+  createTrackbar("grid line hough threshold", windowName,
+     &gridLineHoughThreshold, 200, onTrackbar);
+  createTrackbar("grid line hough min line", windowName,
+     &gridLineHoughMinLinLength, 100, onTrackbar);
+  createTrackbar("grid line hough max gap", windowName,
+     &gridLineHoughMaxLineGap, 70, onTrackbar);
+}
 }
 
 int main(int argc, char** argv) {
+  tuningGridLineDetection = true;
+  // tuningCornerDetection = true;
   if (argc != 2) {
    cerr << "display_image.out <Path to Image>";
    return -1; 
@@ -133,15 +304,42 @@ int main(int argc, char** argv) {
   }
   resize(image, image, Size(), 0.2, 0.2, INTER_AREA);
   namedWindow("Original Image", WINDOW_AUTOSIZE);
-  imshow("Original Image", image);
+  namedWindow("Warped", WINDOW_AUTOSIZE);
 
-  cvtColor(image, gray, COLOR_BGR2GRAY);
   // everything starts with 'gray'.
-  namedWindow("Display Image", WINDOW_AUTOSIZE);
-  imshow("Display Image", gray);
+  cvtColor(image, gray, COLOR_BGR2GRAY);
+  imshow("Original Image", gray);
+
   namedWindow("Controls", WINDOW_AUTOSIZE);
   setupTrackbars("Controls");
 
-  int input = waitKeyEx(0);
+  int input;
+
+  musicocr::CornerFinder cornerFinder;
+  vector<Vec4i> lines = cornerFinder.find_lines(gray);
+  vector<Point> corners = cornerFinder.find_corners(lines, gray.cols, gray.rows);
+
+  // Crop to corners.
+  Rect c(corners[0], corners[2]);
+  rectangle(gray, corners[0], corners[2], Scalar(255, 255, 255), 6);
+
+  warped = Mat(gray, c);
+
+  // Somehow warping doesn't help that much, just cropping for now.
+  imshow("Warped", warped);
+
+  if (tuningGridLineDetection) {
+    namedWindow("Canny", WINDOW_AUTOSIZE);
+    namedWindow("hough", WINDOW_AUTOSIZE);
+    namedWindow("Grid", WINDOW_AUTOSIZE);
+  }
+
+  // Now 'warped' contains the adjusted image, in grayscale.
+  // Identify the printed horizontal lines, as well as any vertical lines.
+  // Horizontal lines need to be grouped into groups of five. Vertical lines
+  // go through one or more groups of horizontal lines.
+
+
+  input = waitKeyEx(0);
   return 0;
 }

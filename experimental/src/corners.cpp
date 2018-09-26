@@ -1,4 +1,5 @@
 #include "corners.hpp"
+#include "utils.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -8,77 +9,45 @@ namespace musicocr {
 using namespace std;
 using namespace cv;
 
-// Returns 1 for horizontal, 0 for vertical, -1 for neither.
-short lineIsHorizontal(const cv::Vec4i& vec) {
-    // vec is of type Vec4i, which is a quadruple of integers.
-    // vec[0], vec[1] is the starting point, vec[2], vec[3] the end point
-    // of a line. 
-    const int dx = std::abs(vec[0] - vec[2]);
-    const int dy = std::abs(vec[1] - vec[3]);
-
-    if (dx == 0 && dy == 0) {
-       // This is not a line.
-       throw std::logic_error("Illegal line of length 0.");
-    }
-    if (dy == 0) { return 1; }
-    if (dx == 0) { return 0; }
-    const float dd = (float)dy / dx;
-    if (dd < 0.8) {
-      return 1;
-    }
-    if (dd > 1.2) {
-      return 0;
-    }
-    return -1;  // neither
-}
-
 std::vector<cv::Vec4i> CornerFinder::find_lines(const cv::Mat& image) const {
   // Input is expected to be a grayscale image.
   Mat tmp;
   GaussianBlur(image, tmp, Size(config.gaussianKernel, config.gaussianKernel),
                0, 0);
-  namedWindow("Blurred", WINDOW_AUTOSIZE);
-  imshow("Blurred", tmp);
   threshold(tmp, tmp, config.thresholdValue, 255, config.thresholdType);
-  namedWindow("Threshold", WINDOW_AUTOSIZE);
-  imshow("Threshold", tmp);
   Canny(tmp, tmp, config.cannyMin, config.cannyMax, config.sobelKernel,
         config.l2gradient);
   namedWindow("Canny", WINDOW_AUTOSIZE);
   imshow("Canny", tmp);
 
-  // Somehow this finds all the small horizontal lines
   vector<Vec4i> lines;
-  HoughLinesP(tmp, lines, config.houghResolution, config.houghResolutionRad,
-              config.houghThreshold, config.houghMinLinLength,
-              config.houghMaxLineGap);
+  // Hardcoding the resolution because playing with it only ever made
+  // things worse.
+  HoughLinesP(tmp, lines, 1, CV_PI/180.0, config.houghThreshold,
+               config.houghMinLinLength, config.houghMaxLineGap);
+
+#if 0
+  // hack: also find contours.
+  // This finds a lot of contours because it also finds a lot of isolated bits.
+  vector<vector<Point>> contours;
+  vector<Vec4i> hierarchy;
+  findContours(tmp, contours, hierarchy, RETR_EXTERNAL,
+    CHAIN_APPROX_SIMPLE, Point(0, 0));
+
+  cout << "found " << contours.size() << " contours "
+       << "and hierarchy has depth " << hierarchy.size() << endl;
+
+  Mat cont;
+  cvtColor(tmp, cont, COLOR_GRAY2BGR);
+  for (int i = 0; i < contours.size(); i++) {
+    drawContours(cont, contours, i, Scalar(0, 255, 0), 2, 8, hierarchy, 0,
+                 Point(0, 0));
+  }
+  namedWindow("Contours", WINDOW_AUTOSIZE);
+  imshow("Contours", cont);
+#endif
+
   return lines;
-}
-
-// Order by y coordinate, using x to break ties.
-bool moreTop (const cv::Vec4i& line1, const cv::Vec4i& line2) {
-  if (line1[1] > line2[1]) return false;
-  if (line1[1] < line2[1]) return true;
-  return line1[0] < line2[0];
-}
-
-bool moreBottom (const cv::Vec4i& line1, const cv::Vec4i& line2) {
-  if (line1[1] > line2[1]) return true;
-  if (line1[1] < line2[1]) return false;
-  return line1[0] < line2[0];
-}
-
-// Order by x coordinate, using y to break ties.
-bool moreRight (const cv::Vec4i& line1, const cv::Vec4i& line2) {
-  if (line1[0] > line2[0]) return true;
-  if (line1[0] < line2[0]) return false;
-  return line1[1] < line2[1];
-}
-
-bool moreLeft (const cv::Vec4i& line1, const cv::Vec4i& line2) {
-  if (line1[0] > line2[0]) return false;
-  if (line1[0] < line2[0]) return true;
-  return line1[1] < line2[1];
 }
 
 cv::Point getIntersection(cv::Vec4i l1, cv::Vec4i l2) {
@@ -107,10 +76,10 @@ cv::Vec4i CornerFinder::getOutline(std::vector<cv::Vec4i>& lines,
   if (lines.size() == 0) {
     // This is fine, initialize outline to an edge of the image.
     switch(orientation) {
-      case 0: return {0, 0, width, 0};
-      case 1: return {width, 0, width, height};
+      case 0: return {0, 0, width, 0};  // top
+      case 3: return {width, 0, width, height};
       case 2: return {0, height, width, height};
-      case 3: return {0, 0, 0, height};
+      case 1: return {0, 0, 0, height};
       default: throw std::logic_error("Illegal orientation, must be 0-3.");
     } 
   }
@@ -144,7 +113,7 @@ cv::Vec4i CornerFinder::getOutline(std::vector<cv::Vec4i>& lines,
       }
       break;
     } else {  // horizontal lines
-      // Is this roughtly at the same height as lastY?
+      // Is this roughly at the same height as lastY?
       if (std::abs(lastY - line[1]) < 6) {
          // And to the right of lastX?
          if (line[0] >= lastX) {
@@ -167,7 +136,7 @@ std::vector<cv::Point> CornerFinder::find_corners(
   std::vector<cv::Vec4i> verticalLines;
 
   const float thirdHeight = (float)height / 3.0;
-  const float topThird = (float)height - thirdHeight;
+  const float bottomThird = (float)height - thirdHeight;
   const float thirdWidth = (float)width / 3.0;
   const float rightThird = (float)width - thirdWidth;
 
@@ -176,7 +145,7 @@ std::vector<cv::Point> CornerFinder::find_corners(
     if (h == 1) {
       if (line[1] < thirdHeight) {
         topLines.push_back(line);
-      } else if (line[1] > topThird) {
+      } else if (line[1] > bottomThird) {
         bottomLines.push_back(line);
       }
     } else if (h == 0) {

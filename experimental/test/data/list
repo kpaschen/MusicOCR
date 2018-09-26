@@ -1,0 +1,34 @@
+DSC_0177.jpg  bottom half of page is distorted
+DSC_0178.jpg  upside down, poor lighting in one corner but strong lines
+DSC_0179.jpg  small focus area. upside down. Lines too pale in bottom/top line, needs gaussian kernel 5 for grid.
+DSC_0180.jpg  upside down. poorly lit. for grid, gaussian 3 and threshold 4 help.
+DSC_0181.jpg  very out of focus, fails to get rotated. don't use.
+DSC_0182.jpg  corners not found correctly, but lines ok. gaussian 11 would be better for corners.
+DSC_0183.jpg  this is ok
+DSC_0184.jpg  poorly lit, smudged, skewed. given that, line finding does ok.
+DSC_0185.jpg  dark, blurry, fails to get rotated. would need to dial canny min way down to 14 for corner finding. do not use
+DSC_0186.jpg  as 185, but could do better -- hough does find the lines, they just aren't recognised for what they are because the rotation was missed. for rotation, would need sobel kernel size 5.
+DSC_0187.jpg same
+DSC_0206.jpg bad lighting. kernel 3, thresh 4 is better
+DSC_0207.jpg does not get rotated, line finding ok otherwise
+DSC_0208.jpg same (the right side might be too skewed)
+DSC_0209.jpg same
+sample1.jpg works
+
+
+filename      rotate?   voices  #lines with music  #lines on sheet
+sample1.jpg   y         1        9                 12
+DSC_0177.jpg  y         4        12                12
+DSC_0178.jpg  n         2,3      8                 12
+DSC_0179.jpg  n         1        3                 5
+DSC_0180.jpg  y         2        6                 12
+DSC_0182.jpg  y         1,2      8                 12
+DSC_0183.jpg  y         1        9                 12
+DSC_0184.jpg  y         2        10                12
+DSC_0206.jpg  y         2        8                 12
+DSC_0207.jpg  y         2,1      9                 12
+DSC_0208.jpg  n         2        8                 8
+DSC_0209.jpg  y         2        8                 10
+
+
+
