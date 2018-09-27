@@ -43,6 +43,10 @@ class Sheet {
      return lineGroups.size();
    }
 
+   const LineGroup& getNthLineGroup(size_t i) const {
+     return *lineGroups[i];
+   }
+
    void analyseLines(const std::vector<cv::Vec4i>&, const cv::Mat&);
    void printSheetInfo() const; 
 
@@ -64,6 +68,8 @@ class LineGroup {
      lines.emplace_back(line);
    }
 
+   const SheetLine& getNthVoice(size_t i) const { return lines[i]; }
+
  private:
    std::vector<SheetLine> lines;
 };
@@ -77,6 +83,8 @@ class SheetLine {
    int getRightEdge() const { return boundingBox.br().x; }
    void updateBoundingBox(const std::pair<int, int>&, const cv::Mat&);
 
+   const cv::Rect& getBoundingBox() const { return boundingBox; }
+
    static const int verticalPaddingPx = 20;
    static const int horizontalPaddingPx = 10;
 
@@ -86,7 +94,8 @@ class SheetLine {
 
  private:
    static cv::Vec4i TopLine(const std::vector<cv::Vec4i>&);
-   static cv::Rect BoundingBox(const std::vector<cv::Vec4i>&);
+   static cv::Rect BoundingBox(const std::vector<cv::Vec4i>&,
+                               int rows, int cols);
 
    // Lines found by houghp.
    std::vector<cv::Vec4i> lines;

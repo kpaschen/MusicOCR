@@ -26,27 +26,6 @@ std::vector<cv::Vec4i> CornerFinder::find_lines(const cv::Mat& image) const {
   HoughLinesP(tmp, lines, 1, CV_PI/180.0, config.houghThreshold,
                config.houghMinLinLength, config.houghMaxLineGap);
 
-#if 0
-  // hack: also find contours.
-  // This finds a lot of contours because it also finds a lot of isolated bits.
-  vector<vector<Point>> contours;
-  vector<Vec4i> hierarchy;
-  findContours(tmp, contours, hierarchy, RETR_EXTERNAL,
-    CHAIN_APPROX_SIMPLE, Point(0, 0));
-
-  cout << "found " << contours.size() << " contours "
-       << "and hierarchy has depth " << hierarchy.size() << endl;
-
-  Mat cont;
-  cvtColor(tmp, cont, COLOR_GRAY2BGR);
-  for (int i = 0; i < contours.size(); i++) {
-    drawContours(cont, contours, i, Scalar(0, 255, 0), 2, 8, hierarchy, 0,
-                 Point(0, 0));
-  }
-  namedWindow("Contours", WINDOW_AUTOSIZE);
-  imshow("Contours", cont);
-#endif
-
   return lines;
 }
 

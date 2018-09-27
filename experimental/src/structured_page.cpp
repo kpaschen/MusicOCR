@@ -92,11 +92,9 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
   for (const auto& l : sheetLines) {
     bool startNewGroup = false;
     if (group->size() == 4) {
-       // cout << "start new group: already four voices." << endl;
        startNewGroup = true;
     }
     else if (group->size() > 0 && crossings.size() == 0) {
-      // cout << "start new group: crossings is empty." << endl; 
       startNewGroup = true;
     }
     // Compute newCrossings and intersection count in any case.
@@ -114,8 +112,6 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
       }
     }
     // now we have newCrossings and intersectSize
-    //cout << "Found " << newCrossings.size() << " crossings and "
-    //     << intersectSize << " common crossings." << endl;
     // There's already a line, and there are crossings.
     if (group->size() > 0 && crossings.size() > 0) {
       // 2 may be too low a threshold.
@@ -178,12 +174,11 @@ SheetLine::SheetLine(const vector<Vec4i>& l, const Mat& wholePage) {
   Vec4i topLine = TopLine(lines); 
 
   const int heightDiff = topLine[1] - topLine[3];
-  // cout << "height diff: " << heightDiff << endl;
 
   line(wholePage, Point(topLine[0], topLine[1]), Point(topLine[2], topLine[3]),
        Scalar(255, 255, 255), 5);
 
-  boundingBox = BoundingBox(lines);
+  boundingBox = BoundingBox(lines, wholePage.rows, wholePage.cols);
   rectangle(wholePage, boundingBox, Scalar(255, 255, 255), 5);
 }
 
@@ -230,15 +225,16 @@ Vec4i SheetLine::TopLine(const vector<Vec4i>& l) {
   return topLine;
 }
 
-Rect SheetLine::BoundingBox(const vector<Vec4i>& l) {
+Rect SheetLine::BoundingBox(const vector<Vec4i>& l, int rows,
+                            int cols) {
   // This is per-sheetline, might want to determine left/right
   // boundaries at sheet level though. Top and Bottom are
   // relatively straightforward.
 
   // Make sure to snap these to the actual edges of the sheet if
   // necessary.
-  const int top = l[0][1] - verticalPaddingPx;
-  const int bottom = l.back()[1] + verticalPaddingPx;
+  const int top = std::max(0, l[0][1] - verticalPaddingPx);
+  const int bottom = std::min(rows, l.back()[1] + verticalPaddingPx);
 
   // Keep track of the leftmost and rightmost three points.
   // This is so we can discard outliers due to artifacts.
@@ -265,10 +261,10 @@ Rect SheetLine::BoundingBox(const vector<Vec4i>& l) {
     else if (r > right2) right2 = r;
     else if (r > right3) right3 = r;
   }
-  const int left = (left1 < left2 ? (left2 < left3 ? left3 : left2) : left1)
-                    - horizontalPaddingPx;
-  const int right = (right1 > right2 ? (right2 > right3 ? right3 : right2) : right1)
-                     + horizontalPaddingPx;
+  const int left = std::max(0, (left1 < left2 ? (left2 < left3 ? left3 : left2)
+                                : left1) - horizontalPaddingPx);
+  const int right = std::min(cols, (right1 > right2 ? (right2 > right3 ? right3
+                                    : right2) : right1) + horizontalPaddingPx);
    
   return Rect(Point(left, top), Point(right, bottom));
 }
@@ -289,7 +285,6 @@ void SheetLine::collectSheetLines(const vector<Vec4i>& horizontalLines,
     // gap == vertical distance between this line and the previous one.
     const int gap = std::abs(curr[1] - currentGroup.back()[1]);
     if (gap < 7) {
-      // cout << "Adding to sheet line. " << currentGroup.size() << endl;
       currentGroup.push_back(curr);
       lastLineHeight = curr[1];
       // line(clines, Point(curr[0], curr[1]), Point(curr[2], curr[3]),
@@ -299,10 +294,9 @@ void SheetLine::collectSheetLines(const vector<Vec4i>& horizontalLines,
     if (gap >= 20) {
       // How high is the current sheet line?
       const int height = currentGroup.back()[1] - currentGroup[0][1];
-      cout << "Current height: " << height << endl;
+      // cout << "Current height: " << height << endl;
       if (height >= 20) {
         // Finalize the current set
-        cout << "Found a sheetline." << endl;
         sheetLines->push_back(SheetLine(currentGroup, clines));
         lastLineHeight = currentGroup.back()[1];
         // Begin a new sheet line.
@@ -355,7 +349,6 @@ void maybeCombineVerticalLines(
           newBottom = candidate[1];
           newWidth = candidate[0];
         }
-        cout << "Extending a line to " << newWidth << ", " << newBottom << endl;
         advance++;
         currentLine[2] = newWidth;
         currentLine[3] = newBottom;
