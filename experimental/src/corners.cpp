@@ -17,8 +17,8 @@ std::vector<cv::Vec4i> CornerFinder::find_lines(const cv::Mat& image) const {
   threshold(tmp, tmp, config.thresholdValue, 255, config.thresholdType);
   Canny(tmp, tmp, config.cannyMin, config.cannyMax, config.sobelKernel,
         config.l2gradient);
-  namedWindow("Canny", WINDOW_AUTOSIZE);
-  imshow("Canny", tmp);
+  //namedWindow("Canny", WINDOW_AUTOSIZE);
+  // imshow("Canny", tmp);
 
   vector<Vec4i> lines;
   // Hardcoding the resolution because playing with it only ever made

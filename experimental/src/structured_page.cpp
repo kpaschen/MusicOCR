@@ -305,7 +305,7 @@ void SheetLine::collectSheetLines(const vector<Vec4i>& horizontalLines,
         line(clines, Point(curr[0], curr[1]), Point(curr[2], curr[3]),
              sheetLineColour, 1);
       } else {
-        cout << "Patchy sheet line?" << endl;
+        // cout << "Patchy sheet line?" << endl;
         // Draw the line just below the patchy line. 
         // we'll add this to the current group anyway.
         currentGroup.push_back(curr);
@@ -314,7 +314,7 @@ void SheetLine::collectSheetLines(const vector<Vec4i>& horizontalLines,
         continue;
       }
     }  // gap >= 7 and gap < 20
-    cout << "Some stuff between lines? " << endl;
+    // cout << "Some stuff between lines? " << endl;
     line(clines, Point(curr[0], curr[1]), Point(curr[2], curr[3]),
          betweenLinesColour, 1);
   }

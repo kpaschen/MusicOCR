@@ -14,12 +14,11 @@ Mat gray, warped;
 bool tuningCornerDetection = false;
 bool tuningHarrisCorners = false;
 bool tuningGridLineDetection = false;
-bool tuningErodeDilate = false;
 bool tuningContoursInLine = false;
 
 // Only needed if tuning corner detection
 int gaussianKernel = 3;
-int thresholdValue = 0.0;
+int thresholdValue = 0;
 int thresholdType = 4;
 int useOtsu = 1;  // only true or false
 int cannyMin = 80;
@@ -40,7 +39,7 @@ int harrisThreshold = 200;
 
 // Only needed if tuning grid line detection
 int gridLineGaussianKernel = 9;  // 7 or 9 ...
-int gridLineThresholdValue = 0.0;
+int gridLineThresholdValue = 0;
 int gridLineThresholdType = 3;
 int gridLineUseOtsu = 0;
 int gridLineCannyMin = 80;
@@ -51,8 +50,15 @@ int gridLineHoughThreshold = 82;
 int gridLineHoughMinLinLength = 23;
 int gridLineHoughMaxLineGap = 15;
 
-// Tuning erode/dilate
-
+// Tuning contour finding
+int contourGaussianKernel = 3;
+int contourThresholdValue = 0;
+int contourThresholdType = 4;
+int contourUseOtsu = 1;  // only true or false
+int contourCannyMin = 80;
+int contourCannyMax = 90;
+int contourSobelKernel = 3;
+int contourL2Gradient = 0;  // only true or false
 // threshold algorithm.
 // int edthreshold = ADAPTIVE_THRESH_MEAN_C;
 int edthreshold = ADAPTIVE_THRESH_GAUSSIAN_C;
@@ -60,6 +66,7 @@ int edthreshold = ADAPTIVE_THRESH_GAUSSIAN_C;
 int edBlockSize = 15; // must be odd
 int edSubtractMe = 2;
 int edAddMe = 0;
+
 // the width of the horizontal structuring element will be
 // inputmatrix.cols / edHorizontalSizeFudge
 int edHorizontalSizeFudge = 30;
@@ -195,7 +202,19 @@ void onTrackbar(int, void *) {
 
     imshow("Grid", cdst);
   }
-  if (tuningErodeDilate) {
+  if (tuningContoursInLine) {
+    if (contourGaussianKernel % 2 == 0) {
+      contourGaussianKernel++;
+    }
+    if (contourSobelKernel % 2 == 0) {
+      contourSobelKernel++;
+    }
+    if (contourSobelKernel < 3) {
+      contourSobelKernel = 3;
+    }
+    if (contourSobelKernel > 7) {
+      contourSobelKernel = 7;
+    }
     if (edBlockSize % 2 == 0) {
       edBlockSize++;
     }
@@ -268,7 +287,19 @@ if (tuningGridLineDetection) {
   createTrackbar("grid line hough max gap", windowName,
      &gridLineHoughMaxLineGap, 70, onTrackbar);
 }
-if (tuningErodeDilate) {
+if (tuningContoursInLine) {
+  createTrackbar("Gaussian Kernel Size", windowName, &contourGaussianKernel,
+                 15, onTrackbar);
+  createTrackbar("Threshold value", windowName, &contourThresholdValue, 255,
+                 onTrackbar);
+  createTrackbar("Threshold type", windowName, &contourThresholdType,
+                 THRESH_TOZERO_INV, onTrackbar);
+  createTrackbar("Use Otsu", windowName, &contourUseOtsu, 1, onTrackbar);
+
+  createTrackbar("Canny Min", windowName, &contourCannyMin, 255, onTrackbar);
+  createTrackbar("Canny Max", windowName, &contourCannyMax, 255, onTrackbar);
+  createTrackbar("Sobel", windowName, &contourSobelKernel, 7, onTrackbar);
+  createTrackbar("l2gradient", windowName, &contourL2Gradient, 1, onTrackbar);
   createTrackbar("e-d threshold", windowName,
                  &edthreshold, 1, onTrackbar);
   createTrackbar("e-d block size", windowName,
@@ -291,7 +322,7 @@ if (tuningErodeDilate) {
 int main(int argc, char** argv) {
   //tuningGridLineDetection = true;
   //tuningCornerDetection = true;
-  tuningErodeDilate = true;
+  tuningContoursInLine = true;
   if (argc != 2) {
    cerr << "display_image.out <Path to Image>";
    return -1; 
@@ -384,10 +415,18 @@ int main(int argc, char** argv) {
   focused = warped(sl.getBoundingBox());
   imshow("Focused", focused);
 
-  namedWindow("thresh", WINDOW_AUTOSIZE);
-  namedWindow("horizontal", WINDOW_AUTOSIZE);
-  namedWindow("vertical", WINDOW_AUTOSIZE);
-  namedWindow("contours", WINDOW_AUTOSIZE);
+  namedWindow("processed", WINDOW_AUTOSIZE);
+
+  // focused: the line from the original picture to process
+  // processed: current state
+
+  Mat processed;
+  focused.copyTo(processed);
+
+  // This holds contours, and should be a colour map.
+  Mat cont;
+
+  Mat tmp;
 
   bool quit = false;
   while(!quit) {
@@ -410,11 +449,14 @@ int main(int argc, char** argv) {
           lineIndex = gridLineCount - 1;
         }
         break;
-      case 112: // p
-        process = true;
-        break;
-      default: // e.g. 113 = q
+      case 113: // q
         quit = true;
+        break;
+      default:
+        // canny: c, adaptive threshold: t, erode, e: dilate: d,
+        // equalizehist: h, distanceTransform: l, contour finding: f,
+        // reset: r (processed = focus); number: quality rating
+        process = true;
         break;
     }
     if (quit) { break; }
@@ -430,63 +472,195 @@ int main(int argc, char** argv) {
        }
      }
      focused = warped(sl.getBoundingBox());
+     focused.copyTo(processed);
      imshow("Focused", focused);
+     imshow("processed", processed);
+     continue;
     }
-    else if (process) {
+    if (process) {
+      switch(input) {
+        case 'a' : // adaptive threshold
+           {
+           const int additionConstant = (edSubtractMe > 0)
+                     ? (0 - edSubtractMe) : edAddMe;
+           tmp = Mat::zeros(processed.rows, processed.cols, processed.type());
+           cout << "adaptiveThreshold 255, " << edthreshold
+                << ", THRESH_BINARY, " << edBlockSize << ", "
+                << additionConstant << endl; 
+           adaptiveThreshold(processed, tmp, 255, edthreshold,
+                             THRESH_BINARY, edBlockSize, additionConstant);
+           tmp.copyTo(processed);
+           imshow("processed", processed);
+           }
+          break;
+        case 'b' : // gaussian blur
+          {
+          tmp = Mat::zeros(processed.rows, processed.cols, processed.type());
+          cout << "gaussian blur " << contourGaussianKernel
+               << ", 0, 0" << endl;
+          GaussianBlur(processed, tmp, Size(contourGaussianKernel,
+            contourGaussianKernel), 0, 0);
+          tmp.copyTo(processed); 
+          imshow("processed", processed);
+          }
+          break;
+        case 'c' : // canny
+          {
+          cout << "canny " << contourCannyMin << ", "
+               << contourCannyMax << ", " << contourSobelKernel
+               << ", " << contourL2Gradient << endl;
+          Canny(processed, processed, contourCannyMin, contourCannyMax,
+                contourSobelKernel, (contourL2Gradient > 0));
+          imshow("processed", processed);
+          }
+          break;
+        case 'd': // dilate vertically
+         {
+         // Subtracting horizontal lines from processed is not useful.
+         // But maybe just erode the horizontal lines instead?
+         tmp = processed.clone();
 
-      // instead of adaptive threshold, may want to start with
-      // canny:
-      // kernel size 3, thresh type 3 (no otsu), canny min 80, max 90,
-      // sobel 3, l2graedient 0
-      // then erode the horizontal lines away on that.
+         // With a right-sized structuring element (height about rows/7)
+         // this finds the longer vertical lines including the bars.
+         const int edVerticalHeight = tmp.rows / edVerticalSizeFudge;
+         cout << "dilate vertically with "
+              << edVerticalWidth << ", " 
+              << edVerticalHeight << endl;
+         Mat verticalStructure = getStructuringElement(MORPH_RECT,
+           Size(edVerticalWidth, edVerticalHeight));
+         dilate(tmp, tmp, verticalStructure, Point(-1, -1));
+         tmp.copyTo(processed);
+         imshow("processed", processed);
+         }
+          break;
+        case 'e': // e, erode vertically
+          {
+          tmp = processed.clone();
+          const int edVerticalHeight = tmp.rows / edVerticalSizeFudge;
+          cout << "erode vertically with "
+              << edVerticalWidth << ", "
+              << edVerticalHeight << endl;
+          Mat verticalStructure = getStructuringElement(MORPH_RECT,
+            Size(edVerticalWidth, tmp.rows / edVerticalSizeFudge));
+          erode(tmp, tmp, verticalStructure, Point(-1, -1));
+         tmp.copyTo(processed);
+         imshow("processed", processed);
+          }
+          break;
+        case 'x': // dilate horizontally
+          // Find the horizontal lines (we've already got them, not sure
+          // if this finds them better?
+          // could do contour finding on these to get the coordinates.
+          // (need todo 'x', 'a', 'f', then the contours are ok)
 
-      Mat thresh;
-      int additionConstant = (edSubtractMe > 0)
-          ? (0 - edSubtractMe) : edAddMe;
-      adaptiveThreshold(~focused, thresh, 255, edthreshold,
-                        THRESH_BINARY, edBlockSize, additionConstant);
-      imshow("thresh", thresh);
+          // one horizontal dilation with x/30, 1 on non-inverted image
+          // finds the horizontal lines perfectly.
+          // one vertical dilation with 1,y/30 on  non-inverted image
+          // gets the horizontal lines mostly away.
+          // but maybe just subtract the lines i get out of the horizontal
+          // dilation?
 
-      vector<vector<Point>> contours;
-      vector<Vec4i> hierarchy;
-      findContours(thresh, contours, hierarchy, RETR_TREE,
-        CHAIN_APPROX_NONE, Point(0, 0));
-      cout << "on 'thresh', found " << contours.size() << " contours." << endl;
-      Mat cont;
-      cvtColor(thresh, cont, COLOR_GRAY2BGR);
-      for (int i = 0; i < contours.size(); i++) {
-        auto colour = Scalar(0, 0, 255);
-        if (hierarchy[i][3] == -1) {
-          colour = Scalar(255, 0, 0);
-        } else if (hierarchy[i][2] == -1) {
-          colour = Scalar(0, 255, 0);
-        }
-        drawContours(cont, contours, i, colour, 1, 8,
-                     hierarchy, 0, Point(0, 0));
+          // set vertical fudge to 48, d, d, d, e, e, e: good.
+          // maybe 48 is too much? actually want absolute value to be 2 or so.
+          // then try canny, then f -> not bad
+          // d,d,e,e,c,f -> probably good
+          // even better, x, x, s, c, f?
+          {
+          tmp = processed.clone();
+          Mat horizontal = processed.clone();
+          const int edHorizontalWidth = tmp.cols / edHorizontalSizeFudge;
+          cout << "dilate horizontally with "
+              << edHorizontalWidth << ", "
+              << edHorizontalHeight << endl;
+          Mat horizontalStructure = getStructuringElement(MORPH_RECT,
+            Size(edHorizontalWidth, edHorizontalHeight));
+          dilate(tmp, tmp, horizontalStructure, Point(-1, -1));
+          tmp.copyTo(processed);
+          imshow("processed", processed);
+          }
+          break;
+        case 'y': // erode horizontally
+          {
+          tmp = processed.clone();
+          Mat horizontal = processed.clone();
+          const int edHorizontalWidth = tmp.cols / edHorizontalSizeFudge;
+          cout << "erode horizontally with "
+              << edHorizontalWidth << ", "
+              << edHorizontalHeight << endl;
+          Mat horizontalStructure = getStructuringElement(MORPH_RECT,
+            Size(edHorizontalWidth, edHorizontalHeight));
+          erode(tmp, tmp, horizontalStructure, Point(-1, -1));
+          tmp.copyTo(processed);
+          imshow("processed", processed);
+          }
+          break;
+        case 'f': // f, find contours
+          {
+          vector<vector<Point>> contours;
+          vector<Vec4i> hierarchy;
+          findContours(processed, contours, hierarchy, RETR_TREE,
+            //CHAIN_APPROX_NONE, Point(0, 0));
+            CHAIN_APPROX_SIMPLE, Point(0, 0));
+          cout << "found " << contours.size() << " contours." << endl;
+          cvtColor(processed, cont, COLOR_GRAY2BGR);
+          vector<vector<Point>> hull(contours.size());
+          for (int i = 0; i < contours.size(); i++) {
+            auto colour = Scalar(0, 0, 255);
+            if (hierarchy[i][3] == -1) {
+              colour = Scalar(255, 0, 0);
+            } else if (hierarchy[i][2] == -1) {
+              colour = Scalar(0, 255, 0);
+            }
+            drawContours(cont, contours, i, colour, 1, 8,
+                         hierarchy, 0, Point(0, 0));
+            convexHull(Mat(contours[i]), hull[i], false);
+            drawContours(cont, hull, i, Scalar(0, 0, 127), 2, 8,
+                         vector<Vec4i>(), 0, Point(0, 0));
+           
+          }
+          imshow("processed", cont);
+          }
+          break;
+        case 'h': // h, equalizehist
+          equalizeHist(processed, processed);
+          imshow("processed", processed);
+          break;
+        case 'i': // i, invert
+          cout << "inverting " << endl;
+          tmp = ~processed;
+          tmp.copyTo(processed);
+          imshow("processed", processed);
+          break;
+        case 'l': // l, distancetransform
+          break;
+        case 'r': // r, reset
+          cout << "resetting" << endl;
+          focused.copyTo(processed);
+          imshow("processed", processed);
+          break;
+        case 's': // processed := focused - proceessed
+          cout << "subtract" << endl;
+          processed = focused + ~processed;
+          imshow("processed", processed);
+          break;
+        case 't' : // non-adaptive threshold
+          {
+            cout << "threshold " << (float)contourThresholdValue/255.0
+                 << ", " << contourThresholdType << ", "
+                 << contourUseOtsu << endl;
+            threshold(processed, processed, (float)contourThresholdValue/255.0,
+            255,
+            (contourThresholdType + (contourUseOtsu ? THRESH_OTSU : 0)));
+            imshow("processed", processed);
+          }
+          break;
+        default: // is it a number?
+          if ('0' < input && input <= '9') {
+            // input - 48: quality rating
+            cout << "quality rating" << input - '0' << endl;
+          }
+          break;
       }
-      imshow("contours", cont);
-
-      // Find the horizontal lines (we've already got them, not sure
-      // if this finds them better?
-      // could do contour finding on these to get the coordinates.
-      Mat horizontal = thresh.clone();
-      Mat horizontalStructure = getStructuringElement(MORPH_RECT,
-        Size(horizontal.cols / edHorizontalSizeFudge, edHorizontalHeight));
-      erode(horizontal, horizontal, horizontalStructure, Point(-1, -1));
-      dilate(horizontal, horizontal, horizontalStructure, Point(-1, -1));
-
-      imshow("horizontal", horizontal);
-
-      // Subtracting horizontal from thresh is not useful.
-      Mat vertical = thresh.clone();
-
-      // With a right-sized structuring element (height about rows/7)
-      // this finds the longer vertical lines including the bars.
-      Mat verticalStructure = getStructuringElement(MORPH_RECT,
-        Size(edVerticalWidth, vertical.rows / edVerticalSizeFudge));
-      erode(vertical, vertical, verticalStructure, Point(-1, -1));
-      dilate(vertical, vertical, verticalStructure, Point(-1, -1));
-      imshow("vertical", vertical);
 
       // Not sure about this.
 #if 0
@@ -505,24 +679,7 @@ int main(int argc, char** argv) {
       imshow("smooth", vertical);
 #endif
 
-      findContours(vertical, contours, hierarchy, RETR_TREE,
-        CHAIN_APPROX_NONE, Point(0, 0));
-      cout << "on 'vertical', found " << contours.size() << " contours." << endl;
-      Mat cont2;
-      cvtColor(vertical, cont2, COLOR_GRAY2BGR);
-      for (int i = 0; i < contours.size(); i++) {
-        auto colour = Scalar(0, 0, 255);
-        if (hierarchy[i][3] == -1) {
-          colour = Scalar(255, 0, 0);
-        } else if (hierarchy[i][2] == -1) {
-          colour = Scalar(0, 255, 0);
-        }
-        drawContours(cont2, contours, i, colour, 1, 8,
-                     hierarchy, 0, Point(0, 0));
-      }
-      imshow("smooth", cont2);
-
-    }
+  }
   }
 
   return 0;
