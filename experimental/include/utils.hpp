@@ -19,5 +19,7 @@ bool moreTop(const cv::Vec4i& line1, const cv::Vec4i& line2);
 bool moreBottom(const cv::Vec4i& line1, const cv::Vec4i& line2);
 bool moreLeft(const cv::Vec4i& line1, const cv::Vec4i& line2);
 bool moreRight(const cv::Vec4i& line1, const cv::Vec4i& line2);
+
+bool rectLeft(const cv::Rect&, const cv::Rect&);
 }  // end namespace musicocr
 #endif

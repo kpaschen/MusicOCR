@@ -140,4 +140,8 @@ bool moreLeft (const cv::Vec4i& line1, const cv::Vec4i& line2) {
   return line1[1] < line2[1];
 }
 
+bool rectLeft(const cv::Rect& r1, const cv::Rect& r2) {
+  return r1.tl().x < r2.tl().x;
+}
+
 }  // end namespace musicocr

@@ -51,7 +51,7 @@ int gridLineHoughMinLinLength = 23;
 int gridLineHoughMaxLineGap = 15;
 
 // Tuning contour finding
-int contourGaussianKernel = 3;
+int contourGaussianKernel = 1;
 int contourThresholdValue = 0;
 int contourThresholdType = 4;
 int contourUseOtsu = 1;  // only true or false
@@ -59,6 +59,13 @@ int contourCannyMin = 80;
 int contourCannyMax = 90;
 int contourSobelKernel = 3;
 int contourL2Gradient = 0;  // only true or false
+// These are peculiarly bad. shouldn't it do better on a very
+// clear canny view?
+int contourHoughThreshold = 70;
+int contourHoughMLL = 23;
+int contourHoughMLG = 32;
+int contourHoughResolution = 1; // resolution in pixels.
+int contourHoughResolutionRad = 1; // resolution in degree radians.
 // threshold algorithm.
 // int edthreshold = ADAPTIVE_THRESH_MEAN_C;
 int edthreshold = ADAPTIVE_THRESH_GAUSSIAN_C;
@@ -300,6 +307,17 @@ if (tuningContoursInLine) {
   createTrackbar("Canny Max", windowName, &contourCannyMax, 255, onTrackbar);
   createTrackbar("Sobel", windowName, &contourSobelKernel, 7, onTrackbar);
   createTrackbar("l2gradient", windowName, &contourL2Gradient, 1, onTrackbar);
+  createTrackbar("houghThreshold", windowName, &contourHoughThreshold, 200,
+                 onTrackbar);
+  createTrackbar("hough min line", windowName,
+     &contourHoughMLL, 100, onTrackbar);
+  createTrackbar("hough max gap", windowName,
+     &contourHoughMLG, 70, onTrackbar);
+  createTrackbar("hough resolution", windowName,
+     &contourHoughResolution, 100, onTrackbar);
+  createTrackbar("hough rad", windowName,
+     &contourHoughResolutionRad, 180, onTrackbar);
+  
   createTrackbar("e-d threshold", windowName,
                  &edthreshold, 1, onTrackbar);
   createTrackbar("e-d block size", windowName,
@@ -416,6 +434,9 @@ int main(int argc, char** argv) {
   imshow("Focused", focused);
 
   namedWindow("processed", WINDOW_AUTOSIZE);
+  namedWindow("canny", WINDOW_AUTOSIZE);
+  namedWindow("hough", WINDOW_AUTOSIZE);
+  namedWindow("what is this?", WINDOW_AUTOSIZE);
 
   // focused: the line from the original picture to process
   // processed: current state
@@ -516,10 +537,7 @@ int main(int argc, char** argv) {
           break;
         case 'd': // dilate vertically
          {
-         // Subtracting horizontal lines from processed is not useful.
-         // But maybe just erode the horizontal lines instead?
          tmp = processed.clone();
-
          // With a right-sized structuring element (height about rows/7)
          // this finds the longer vertical lines including the bars.
          const int edVerticalHeight = tmp.rows / edVerticalSizeFudge;
@@ -548,26 +566,9 @@ int main(int argc, char** argv) {
           }
           break;
         case 'x': // dilate horizontally
-          // Find the horizontal lines (we've already got them, not sure
-          // if this finds them better?
-          // could do contour finding on these to get the coordinates.
-          // (need todo 'x', 'a', 'f', then the contours are ok)
-
-          // one horizontal dilation with x/30, 1 on non-inverted image
-          // finds the horizontal lines perfectly.
-          // one vertical dilation with 1,y/30 on  non-inverted image
-          // gets the horizontal lines mostly away.
-          // but maybe just subtract the lines i get out of the horizontal
-          // dilation?
-
-          // set vertical fudge to 48, d, d, d, e, e, e: good.
-          // maybe 48 is too much? actually want absolute value to be 2 or so.
-          // then try canny, then f -> not bad
-          // d,d,e,e,c,f -> probably good
-          // even better, x, x, s, c, f?
+          // (x,y,s,c,f)
           {
           tmp = processed.clone();
-          Mat horizontal = processed.clone();
           const int edHorizontalWidth = tmp.cols / edHorizontalSizeFudge;
           cout << "dilate horizontally with "
               << edHorizontalWidth << ", "
@@ -582,7 +583,6 @@ int main(int argc, char** argv) {
         case 'y': // erode horizontally
           {
           tmp = processed.clone();
-          Mat horizontal = processed.clone();
           const int edHorizontalWidth = tmp.cols / edHorizontalSizeFudge;
           cout << "erode horizontally with "
               << edHorizontalWidth << ", "
@@ -595,14 +595,20 @@ int main(int argc, char** argv) {
           }
           break;
         case 'f': // f, find contours
+          // first: x, y, s. then t, b (gaussian 3 or more).
+          // gaussian kernel 7 the bounding boxes contain too much
+          // but might be good for text. 5 is also not so good.
+          // 3 has ok segmentation.
           {
           vector<vector<Point>> contours;
           vector<Vec4i> hierarchy;
+          // maybe just the outer contours are enough.
           findContours(processed, contours, hierarchy, RETR_TREE,
             //CHAIN_APPROX_NONE, Point(0, 0));
             CHAIN_APPROX_SIMPLE, Point(0, 0));
           cout << "found " << contours.size() << " contours." << endl;
           cvtColor(processed, cont, COLOR_GRAY2BGR);
+          vector<Rect> rectangles(contours.size());
           vector<vector<Point>> hull(contours.size());
           for (int i = 0; i < contours.size(); i++) {
             auto colour = Scalar(0, 0, 255);
@@ -613,9 +619,37 @@ int main(int argc, char** argv) {
             }
             drawContours(cont, contours, i, colour, 1, 8,
                          hierarchy, 0, Point(0, 0));
-            convexHull(Mat(contours[i]), hull[i], false);
+#if 0
             drawContours(cont, hull, i, Scalar(0, 0, 127), 2, 8,
                          vector<Vec4i>(), 0, Point(0, 0));
+#endif
+            convexHull(Mat(contours[i]), hull[i], false);
+            rectangles[i] = boundingRect(Mat(hull[i]));
+          }
+          std::sort(rectangles.begin(), rectangles.end(), musicocr::rectLeft);
+          for (int i = 0; i < rectangles.size(); i++) {
+            rectangle(cont, rectangles[i], Scalar(0, 0, 127), 2);
+            imshow("processed", cont);
+
+            Mat partial = Mat(focused, rectangles[i]);
+            cout << "showing contour at coordinates " << rectangles[i].tl()
+                 << " to " << rectangles[i].br() << endl;
+            Mat scaleup;
+            resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
+
+            imshow("what is this?", scaleup);
+
+            // 'l': vertical line, 'h': note head, 's': sharp,
+            // 'm': multiple items, 'k': skippable, 'b': long break,
+            // 'd': double vertical line', 'w': character or number,
+            // 'o': other, 'c': connecting line
+            int cat = waitKeyEx(0);
+
+            char fname[200];
+            sprintf(fname, "training/data/f%d.png", i);
+            cout << fname << " contains " << cat << endl;
+                 
+            bool result = imwrite(fname, partial);
            
           }
           imshow("processed", cont);
@@ -631,7 +665,20 @@ int main(int argc, char** argv) {
           tmp.copyTo(processed);
           imshow("processed", processed);
           break;
-        case 'l': // l, distancetransform
+        case 'l': // hough line finding
+          {
+          vector<Vec4i> lines;
+          HoughLinesP(processed, lines, contourHoughResolution, 
+                     (float)contourHoughResolutionRad * CV_PI/180.0,
+                      contourHoughThreshold,
+                      contourHoughMLL, contourHoughMLG);
+          cvtColor(processed, cont, COLOR_GRAY2BGR);
+          for (const auto& l: lines) {
+            line(cont, Point(l[0], l[1]), Point(l[2], l[3]),
+                 Scalar(255, 0, 0), 1);
+          }
+          imshow("processed", cont);
+          }
           break;
         case 'r': // r, reset
           cout << "resetting" << endl;
@@ -652,6 +699,145 @@ int main(int argc, char** argv) {
             255,
             (contourThresholdType + (contourUseOtsu ? THRESH_OTSU : 0)));
             imshow("processed", processed);
+          }
+          break;
+        case 'z' : // obtain coordinate system for current line
+          // One horizontal dilate/erode to get just the horizontal lines.
+          {
+          tmp = processed.clone();
+          const int edHorizontalWidth = tmp.cols / edHorizontalSizeFudge;
+          Mat horizontalStructure = getStructuringElement(MORPH_RECT,
+            Size(edHorizontalWidth, edHorizontalHeight));
+          dilate(tmp, tmp, horizontalStructure, Point(-1, -1));
+          erode(tmp, tmp, horizontalStructure, Point(-1, -1));
+
+          GaussianBlur(tmp, tmp,
+                       Size(contourGaussianKernel, contourGaussianKernel),
+                       0, 0);
+
+          threshold(tmp, tmp, (float)contourThresholdValue/255.0, 255,
+            (contourThresholdType + (contourUseOtsu ? THRESH_OTSU : 0)));
+
+          Canny(tmp, tmp, contourCannyMin, contourCannyMax,
+                contourSobelKernel, (contourL2Gradient > 0));
+          imshow("canny", tmp);
+          vector<Vec4i> lines;
+          // 2.0 might help a bit with mild rotations.
+          //HoughLinesP(tmp, lines, 1, 2.0 * CV_PI/180.0, contourHoughThreshold,
+          //            contourHoughMLL, contourHoughMLG);
+          HoughLinesP(tmp, lines, 1, 2.0 * CV_PI/180.0, 70,
+                      23, 32);
+          std::sort(lines.begin(), lines.end(), musicocr::moreRight);
+          std::sort(lines.begin(), lines.end(), musicocr::moreTop);
+          vector<Vec4i> horizontals;
+          const Scalar colour1(0, 0, 255);
+          const Scalar colour2(255, 0, 0);
+          // The horizontal lines are across about 25 pts vertically, with
+          // 4-8 distance between lines. start around 25, go up to about 480.
+          Scalar currentColour = colour1;
+          for (size_t i = 0; i < lines.size(); i++) {
+            const auto& l = lines[i];
+            int currentHeight = l[1];
+            Point lp(l[0], l[1]); Point rp(l[2], l[3]);
+            int top = std::min(l[1], l[3]), bottom = std::max(l[1], l[3]);
+            for (size_t j = i+1; j < lines.size(); j++) {
+              const auto& k = lines[j];
+              if (k[1] - bottom <= 2) {
+                if (k[2] <= lp.x || k[0] >= rp.x) {
+                  if (k[2] <= lp.x) {
+                    lp = Point(k[0], k[1]);
+                  }
+                  if (k[0] >= rp.x) {
+                    rp = Point(k[2], k[3]);
+                  }
+                  top = std::min(top, std::min(k[1], k[3]));
+                  bottom = std::max(bottom, std::max(k[1], k[3]));
+                } else {
+                  i = j + 1;
+                  break;
+                }
+              } else {
+                  i = j + 1;
+                  break;
+              }
+            }
+            horizontals.emplace_back(Vec4i(lp.x, lp.y, rp.x, rp.y));
+          //  cout << "extended line at height " << currentHeight;  
+          //  cout << " from " << lp << " to " << rp << endl;
+            line(tmp, lp, rp, currentColour, 1);
+            if (currentColour == colour1) currentColour = colour2;
+            else currentColour = colour1;
+          }
+          vector<Vec4i> gridLinesH;
+          int lastHeight = 0;
+          int bestLeft = 500, bestRight = 0;
+          for (size_t i = 0; i < horizontals.size(); i++) {
+            const auto& candidate = horizontals[i];
+            if (!gridLinesH.empty() && candidate[1] - lastHeight >= 12
+                && lastHeight < 50) {
+              cout << "resetting at height " << lastHeight << endl;
+              bestLeft = 500, bestRight = 0;
+              gridLinesH.clear();
+            }
+            gridLinesH.push_back(candidate);
+            lastHeight = candidate[1];
+            if (candidate[0] < bestLeft) bestLeft = candidate[0];
+            if (candidate[2] > bestRight) bestRight = candidate[2];
+          } 
+          rectangle(tmp, Point(bestLeft, gridLinesH[0][1]),
+                    Point(bestRight, gridLinesH.back()[3]),
+                    Scalar(255, 255, 255), 2);
+          imshow("processed", tmp);
+            // try to find bar line candidates
+            tmp = processed.clone();
+            const int edVerticalHeight = tmp.rows / edVerticalSizeFudge;
+            Mat verticalStructure = getStructuringElement(MORPH_RECT,
+              Size(edVerticalWidth, edVerticalHeight));
+            dilate(tmp, tmp, verticalStructure, Point(-1, -1));
+            erode(tmp, tmp, verticalStructure, Point(-1, -1));
+            threshold(tmp, tmp, (float)contourThresholdValue/255.0, 255,
+              (contourThresholdType + (contourUseOtsu ? THRESH_OTSU : 0)));
+
+            Canny(tmp, tmp, contourCannyMin, contourCannyMax,
+                  contourSobelKernel, (contourL2Gradient > 0));
+            imshow("canny", tmp);
+            HoughLinesP(tmp, lines, 9, 180.0 * CV_PI/180.0,
+                        24, 23, 29);
+            cout << "found " << lines.size() << " vertical lines." << endl;
+            Mat bla;
+            cvtColor(tmp, bla, COLOR_GRAY2BGR);
+            // there should be a bar line on the left and one on the right
+            // edge. they should have the height of the grid. look for them,
+            // and for other potential bar lines that also have the height
+            // of the grid.
+            for (const auto& l: lines) {
+              if (l[0] < bestLeft - 2) continue;
+              if (l[2] > bestRight + 2) continue;
+  
+              const int top = std::min(l[1], l[3]);
+              const int bottom = std::max(l[1], l[3]);
+
+              int gridLinesTop, gridLinesBottom;
+              if (l[0] - bestLeft >= (bestRight - bestLeft)/2) {
+                gridLinesTop = gridLinesH[0][3];
+                gridLinesBottom = gridLinesH.back()[3];
+              } else {
+                gridLinesTop = gridLinesH[0][1];
+                gridLinesBottom = gridLinesH.back()[1];
+              }
+              if (std::abs(top - gridLinesTop) < 3 &&
+                  std::abs(bottom - gridLinesBottom) < 3) {
+                // this has good precision for finding bar lines but
+                // the recall could be better. Could collect these
+                // in gridLinesV.
+                line(bla, Point(l[0], l[1]), Point(l[2], l[3]),
+                     Scalar(0, 255, 0), 1);
+                continue;
+              } 
+              line(bla, Point(l[0], l[1]), Point(l[2], l[3]),
+                   Scalar(255, 0, 0), 1);
+            }
+            imshow("hough", bla);
           }
           break;
         default: // is it a number?
