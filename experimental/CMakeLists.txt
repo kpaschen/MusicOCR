@@ -17,6 +17,12 @@ target_link_libraries(musicocr ${OpenCV_LIBS})
 add_executable(DisplayImage display_image.cpp)
 target_link_libraries(DisplayImage musicocr)
 
+add_executable(TrainKnn train_knn.cpp)
+target_link_libraries(TrainKnn musicocr)
+
+add_executable(TestKnn test_knn.cpp)
+target_link_libraries(TestKnn musicocr)
+
 find_package(GTest REQUIRED)
 enable_testing()
 file(GLOB musicocr_test_source_files test/*.cpp)

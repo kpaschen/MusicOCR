@@ -1,3 +1,4 @@
+#include <fstream>
 #include <iostream>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -5,6 +6,7 @@
 
 #include "corners.hpp"
 #include "structured_page.hpp"
+#include "shapes.hpp"
 
 using namespace cv;
 using namespace std;
@@ -12,7 +14,6 @@ using namespace std;
 Mat gray, warped;
 
 bool tuningCornerDetection = false;
-bool tuningHarrisCorners = false;
 bool tuningGridLineDetection = false;
 bool tuningContoursInLine = false;
 
@@ -31,12 +32,6 @@ int houghThreshold = 100;
 int houghMinLinLength = 50;
 int houghMaxLineGap = 15;
 
-// Only needed if tuning harris corner detection
-int blockSize = 2;
-int apertureSize = 3;
-int k = 4;
-int harrisThreshold = 200;
-
 // Only needed if tuning grid line detection
 int gridLineGaussianKernel = 9;  // 7 or 9 ...
 int gridLineThresholdValue = 0;
@@ -51,7 +46,7 @@ int gridLineHoughMinLinLength = 23;
 int gridLineHoughMaxLineGap = 15;
 
 // Tuning contour finding
-int contourGaussianKernel = 1;
+int contourGaussianKernel = 3;
 int contourThresholdValue = 0;
 int contourThresholdType = 4;
 int contourUseOtsu = 1;  // only true or false
@@ -133,6 +128,26 @@ void makeSheetConfig(musicocr::SheetConfig *config) {
   config->houghMaxLineGap = gridLineHoughMaxLineGap;
 }
 
+void makeContourConfig(musicocr::ContourConfig *config) {
+  if (contourGaussianKernel % 2 == 0)
+    contourGaussianKernel++;
+  config->gaussianKernel = contourGaussianKernel;
+  config->thresholdValue = (double)contourThresholdValue/255.0;
+  config->thresholdType = contourThresholdType + (contourUseOtsu ? THRESH_OTSU : 0);
+  config->cannyMin = contourCannyMin;
+  config->cannyMax = contourCannyMax;
+  if (contourSobelKernel % 2 == 0) {
+    contourSobelKernel++;
+  }
+  if (contourSobelKernel < 3) { contourSobelKernel = 3; }
+  if (contourSobelKernel > 7) { contourSobelKernel = 7; }
+  config->sobelKernel = contourSobelKernel;
+  config->l2Gradient = (contourL2Gradient != 0);
+
+  config->horizontalSizeFudge = edHorizontalSizeFudge;
+  config->horizontalHeight = 1;
+}
+
 void onTrackbar(int, void *) {
   if (tuningCornerDetection) {
     musicocr::CornerConfig cornerConfig;
@@ -140,47 +155,21 @@ void onTrackbar(int, void *) {
     musicocr::CornerFinder cornerFinder(cornerConfig);
   
     vector<Vec4i> lines = cornerFinder.find_lines(gray);
-    Mat cdst;
-    cvtColor(gray, cdst, COLOR_GRAY2BGR);
+    //cvtColor(gray, cdst, COLOR_GRAY2BGR);
 
     vector<Point> corners = cornerFinder.find_corners(lines, gray.cols, gray.rows);
-    line(cdst, corners[0], corners[1], Scalar(0, 126, 0), 3);   // top
-    line(cdst, corners[1], corners[2], Scalar(0, 255, 0), 3);   // right
-    line(cdst, corners[2], corners[3], Scalar(0, 0, 126), 3);   // bottom
-    line(cdst, corners[3], corners[0], Scalar(0, 0, 255), 3);   // left
 
-  // Crop to corners.
-  Rect c(corners[0], corners[2]);
-  rectangle(cdst, corners[0], corners[2], Scalar(255, 255, 255), 6);
+    // Crop to corners.
+    Rect c(corners[0], corners[2]);
 
-  warped = Mat(gray, c);
-  // somehow just cropping is better than warping most of the time.
-  //warped = Mat::zeros(cropped.rows, cropped.cols, cropped.type());
-  //cornerFinder.adjustToCorners(cropped, warped, corners);
+    warped = Mat(gray, c);
+    // somehow just cropping is better than warping most of the time.
+    //warped = Mat::zeros(cropped.rows, cropped.cols, cropped.type());
+    //cornerFinder.adjustToCorners(cropped, warped, corners);
 
-  imshow("Warped", warped);
+    imshow("Warped", warped);
   }
 
-  if (tuningHarrisCorners) {
-    Mat dst = Mat::zeros(gray.size(), CV_32FC1);
-    if (apertureSize % 2 == 0) {
-      apertureSize += 1;
-    }
-    if (apertureSize > 31) {
-      apertureSize = 31;
-    }  
-    cornerHarris(gray, dst, blockSize, apertureSize, (double)k/100.0, BORDER_DEFAULT);
-    // does this need to be normalised?
-    for (int j = 0; j < dst.rows; j++) {
-      for (int i = 0; i < dst.cols; i++) {
-        if ((int)dst.at<float>(j, i) > harrisThreshold) {
-          circle(dst, Point(i,j), 5, Scalar(0, 0, 0), 2, 8, 0); 
-        }
-      }
-    }
-    namedWindow("bla", WINDOW_AUTOSIZE);
-    imshow("bla", dst);
-  }
   if (tuningGridLineDetection) {
     musicocr::SheetConfig config;
     makeSheetConfig(&config);
@@ -210,18 +199,6 @@ void onTrackbar(int, void *) {
     imshow("Grid", cdst);
   }
   if (tuningContoursInLine) {
-    if (contourGaussianKernel % 2 == 0) {
-      contourGaussianKernel++;
-    }
-    if (contourSobelKernel % 2 == 0) {
-      contourSobelKernel++;
-    }
-    if (contourSobelKernel < 3) {
-      contourSobelKernel = 3;
-    }
-    if (contourSobelKernel > 7) {
-      contourSobelKernel = 7;
-    }
     if (edBlockSize % 2 == 0) {
       edBlockSize++;
     }
@@ -262,16 +239,8 @@ if (tuningCornerDetection) {
                  100, onTrackbar);
   createTrackbar("Hough Max Line Gap (P)", windowName, &houghMaxLineGap,
                  100, onTrackbar);
-
 }
 
-if (tuningHarrisCorners) {
-  // sliders for harris
-  createTrackbar("harris block size", windowName, &blockSize, 10, onTrackbar);
-  createTrackbar("harris aperture size", windowName, &apertureSize, 10, onTrackbar);
-  createTrackbar("harris k", windowName, &k, 100, onTrackbar);
-  createTrackbar("harris threshold", windowName, &harrisThreshold, 400, onTrackbar);
-}
 if (tuningGridLineDetection) {
   createTrackbar("grid line gaussian kernel", windowName,
      &gridLineGaussianKernel, 15, onTrackbar);
@@ -345,12 +314,20 @@ int main(int argc, char** argv) {
    cerr << "display_image.out <Path to Image>";
    return -1; 
   }
+  string filename = argv[1];
   Mat image;
-  image = imread(argv[1], 1);
+  image = imread(filename, 1);
   if (!image.data) {
     cerr << "No image data.";
     return -1;
   }
+  {
+  filename = filename.substr(filename.find_last_of("/") + 1);
+  size_t x = filename.find_last_of('.');
+  if (x > 0) filename = filename.substr(0, x);
+  }
+  cout << "base name of file: " << filename << endl;
+
   resize(image, image, Size(), 0.2, 0.2, INTER_AREA);
   namedWindow("Original Image", WINDOW_AUTOSIZE);
   namedWindow("Warped", WINDOW_AUTOSIZE);
@@ -446,8 +423,11 @@ int main(int argc, char** argv) {
 
   // This holds contours, and should be a colour map.
   Mat cont;
-
   Mat tmp;
+
+   musicocr::ContourConfig contourConfig;
+   makeContourConfig(&contourConfig);
+   musicocr::ShapeFinder shapeFinder(contourConfig);
 
   bool quit = false;
   while(!quit) {
@@ -474,9 +454,6 @@ int main(int argc, char** argv) {
         quit = true;
         break;
       default:
-        // canny: c, adaptive threshold: t, erode, e: dilate: d,
-        // equalizehist: h, distanceTransform: l, contour finding: f,
-        // reset: r (processed = focus); number: quality rating
         process = true;
         break;
     }
@@ -495,7 +472,16 @@ int main(int argc, char** argv) {
      focused = warped(sl.getBoundingBox());
      focused.copyTo(processed);
      imshow("Focused", focused);
-     imshow("processed", processed);
+     ofstream responseStream;
+     char filenameBase[200];
+     sprintf(filenameBase, "training/data/%s.%d", filename.c_str(), lineIndex);
+     char responseFileName[250];
+     sprintf(responseFileName, "training/data/responses.%s.%d",
+             filename.c_str(), lineIndex);
+     responseStream.open(responseFileName);
+     shapeFinder.getTrainingDataForLine(
+       focused, "processed", "what is this?", filenameBase, responseStream);
+     responseStream.close();
      continue;
     }
     if (process) {
@@ -566,7 +552,7 @@ int main(int argc, char** argv) {
           }
           break;
         case 'x': // dilate horizontally
-          // (x,y,s,c,f)
+          // (x,y,t,s,c,f) (but c may not be necessary)
           {
           tmp = processed.clone();
           const int edHorizontalWidth = tmp.cols / edHorizontalSizeFudge;
@@ -632,7 +618,8 @@ int main(int argc, char** argv) {
             imshow("processed", cont);
 
             Mat partial = Mat(focused, rectangles[i]);
-            cout << "showing contour at coordinates " << rectangles[i].tl()
+            cout << "showing contour with area " << rectangles[i].area()
+                 << " at coordinates " << rectangles[i].tl()
                  << " to " << rectangles[i].br() << endl;
             Mat scaleup;
             resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
@@ -648,9 +635,8 @@ int main(int argc, char** argv) {
             char fname[200];
             sprintf(fname, "training/data/f%d.png", i);
             cout << fname << " contains " << cat << endl;
-                 
+
             bool result = imwrite(fname, partial);
-           
           }
           imshow("processed", cont);
           }
@@ -840,31 +826,9 @@ int main(int argc, char** argv) {
             imshow("hough", bla);
           }
           break;
-        default: // is it a number?
-          if ('0' < input && input <= '9') {
-            // input - 48: quality rating
-            cout << "quality rating" << input - '0' << endl;
-          }
+        default:
           break;
       }
-
-      // Not sure about this.
-#if 0
-      Mat edges;
-      adaptiveThreshold(vertical, edges, 255,
-        ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY, 3, -2);
-
-      Mat kernel = Mat::ones(2, 2, CV_8UC1);
-      dilate(edges, edges, kernel);
-
-      Mat smooth;
-      vertical.copyTo(smooth);
-      blur(smooth, smooth, Size(2, 2));
-      smooth.copyTo(vertical, edges);
-
-      imshow("smooth", vertical);
-#endif
-
   }
   }
 
