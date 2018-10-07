@@ -2,11 +2,13 @@
 #include <iostream>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/ml.hpp>
 #include <opencv2/opencv.hpp>
 
 #include "corners.hpp"
 #include "structured_page.hpp"
 #include "shapes.hpp"
+#include "training.hpp"
 
 using namespace cv;
 using namespace std;
@@ -146,6 +148,13 @@ void makeContourConfig(musicocr::ContourConfig *config) {
 
   config->horizontalSizeFudge = edHorizontalSizeFudge;
   config->horizontalHeight = 1;
+
+  if (edBlockSize % 2 == 0) {
+    edBlockSize++;
+  }
+  if (edBlockSize <= 1) {
+    edBlockSize = 3;
+  }
 }
 
 void onTrackbar(int, void *) {
@@ -195,16 +204,7 @@ void onTrackbar(int, void *) {
     sheet.analyseLines(lines, cdst);
 
     sheet.printSheetInfo();
-
     imshow("Grid", cdst);
-  }
-  if (tuningContoursInLine) {
-    if (edBlockSize % 2 == 0) {
-      edBlockSize++;
-    }
-    if (edBlockSize <= 1) {
-      edBlockSize = 3;
-    }
   }
 }
 
@@ -308,10 +308,10 @@ if (tuningContoursInLine) {
 
 int main(int argc, char** argv) {
   //tuningGridLineDetection = true;
-  //tuningCornerDetection = true;
-  tuningContoursInLine = true;
-  if (argc != 2) {
-   cerr << "display_image.out <Path to Image>";
+  tuningCornerDetection = true;
+  //tuningContoursInLine = true;
+  if (argc < 2) {
+   cerr << "DisplayImage <Path to Image>";
    return -1; 
   }
   string filename = argv[1];
@@ -327,6 +327,12 @@ int main(int argc, char** argv) {
   if (x > 0) filename = filename.substr(0, x);
   }
   cout << "base name of file: " << filename << endl;
+
+  cv::Ptr<cv::ml::KNearest> knn;
+  if (argc > 2) {
+     string modelfilename = argv[2];
+     knn = cv::ml::StatModel::load<cv::ml::KNearest>(modelfilename);
+  }
 
   resize(image, image, Size(), 0.2, 0.2, INTER_AREA);
   namedWindow("Original Image", WINDOW_AUTOSIZE);
@@ -354,7 +360,6 @@ int main(int argc, char** argv) {
 
   // Somehow warping doesn't help that much, just cropping for now.
   imshow("Warped", warped);
-  input = waitKeyEx(0);
 
   if (tuningGridLineDetection) {
     namedWindow("Canny", WINDOW_AUTOSIZE);
@@ -411,8 +416,8 @@ int main(int argc, char** argv) {
   imshow("Focused", focused);
 
   namedWindow("processed", WINDOW_AUTOSIZE);
-  namedWindow("canny", WINDOW_AUTOSIZE);
-  namedWindow("hough", WINDOW_AUTOSIZE);
+  //namedWindow("canny", WINDOW_AUTOSIZE);
+   //namedWindow("hough", WINDOW_AUTOSIZE);
   namedWindow("what is this?", WINDOW_AUTOSIZE);
 
   // focused: the line from the original picture to process
@@ -425,16 +430,22 @@ int main(int argc, char** argv) {
   Mat cont;
   Mat tmp;
 
-   musicocr::ContourConfig contourConfig;
-   makeContourConfig(&contourConfig);
-   musicocr::ShapeFinder shapeFinder(contourConfig);
+  musicocr::ContourConfig contourConfig;
+  makeContourConfig(&contourConfig);
+  musicocr::ShapeFinder shapeFinder(contourConfig);
 
   bool quit = false;
   while(!quit) {
+    cout << "top level menu. cursor keys to navigate, "
+         << "'p' to fiddle, 't' to train, 'd' to run a model, "
+         << "or 'q' to quit. Prepare line for contour finding "
+         << "before choosing d. d needs a model loaded."
+         << endl;
     input = waitKeyEx(0);
     bool navigate = false;
     bool process = false;
-    cout << "input: " << input << endl;
+    bool train = false;
+    bool detect = false;
     switch(input) {
       case 65364:  // cursor down
         navigate = true;
@@ -452,6 +463,15 @@ int main(int argc, char** argv) {
         break;
       case 113: // q
         quit = true;
+        break;
+      case 112: // p
+        process = true;  // just fiddle with the image
+        break;
+      case 't': 
+        train = true;
+        break;
+      case 'd':
+        detect = true;
         break;
       default:
         process = true;
@@ -472,20 +492,14 @@ int main(int argc, char** argv) {
      focused = warped(sl.getBoundingBox());
      focused.copyTo(processed);
      imshow("Focused", focused);
-     ofstream responseStream;
-     char filenameBase[200];
-     sprintf(filenameBase, "training/data/%s.%d", filename.c_str(), lineIndex);
-     char responseFileName[250];
-     sprintf(responseFileName, "training/data/responses.%s.%d",
-             filename.c_str(), lineIndex);
-     responseStream.open(responseFileName);
-     shapeFinder.getTrainingDataForLine(
-       focused, "processed", "what is this?", filenameBase, responseStream);
-     responseStream.close();
      continue;
     }
     if (process) {
-      switch(input) {
+      while (true) {
+        cout << "processing image, select operation." << endl;
+        input = waitKeyEx(0);
+        if (input == 'q') break;
+        switch(input) {
         case 'a' : // adaptive threshold
            {
            const int additionConstant = (edSubtractMe > 0)
@@ -552,7 +566,7 @@ int main(int argc, char** argv) {
           }
           break;
         case 'x': // dilate horizontally
-          // (x,y,t,s,c,f) (but c may not be necessary)
+          // (x,y,t,s,b,f)
           {
           tmp = processed.clone();
           const int edHorizontalWidth = tmp.cols / edHorizontalSizeFudge;
@@ -605,38 +619,8 @@ int main(int argc, char** argv) {
             }
             drawContours(cont, contours, i, colour, 1, 8,
                          hierarchy, 0, Point(0, 0));
-#if 0
-            drawContours(cont, hull, i, Scalar(0, 0, 127), 2, 8,
-                         vector<Vec4i>(), 0, Point(0, 0));
-#endif
             convexHull(Mat(contours[i]), hull[i], false);
             rectangles[i] = boundingRect(Mat(hull[i]));
-          }
-          std::sort(rectangles.begin(), rectangles.end(), musicocr::rectLeft);
-          for (int i = 0; i < rectangles.size(); i++) {
-            rectangle(cont, rectangles[i], Scalar(0, 0, 127), 2);
-            imshow("processed", cont);
-
-            Mat partial = Mat(focused, rectangles[i]);
-            cout << "showing contour with area " << rectangles[i].area()
-                 << " at coordinates " << rectangles[i].tl()
-                 << " to " << rectangles[i].br() << endl;
-            Mat scaleup;
-            resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
-
-            imshow("what is this?", scaleup);
-
-            // 'l': vertical line, 'h': note head, 's': sharp,
-            // 'm': multiple items, 'k': skippable, 'b': long break,
-            // 'd': double vertical line', 'w': character or number,
-            // 'o': other, 'c': connecting line
-            int cat = waitKeyEx(0);
-
-            char fname[200];
-            sprintf(fname, "training/data/f%d.png", i);
-            cout << fname << " contains " << cat << endl;
-
-            bool result = imwrite(fname, partial);
           }
           imshow("processed", cont);
           }
@@ -748,8 +732,6 @@ int main(int argc, char** argv) {
               }
             }
             horizontals.emplace_back(Vec4i(lp.x, lp.y, rp.x, rp.y));
-          //  cout << "extended line at height " << currentHeight;  
-          //  cout << " from " << lp << " to " << rp << endl;
             line(tmp, lp, rp, currentColour, 1);
             if (currentColour == colour1) currentColour = colour2;
             else currentColour = colour1;
@@ -827,10 +809,79 @@ int main(int argc, char** argv) {
           }
           break;
         default:
+          cout << "unknown operation " << input << endl;
           break;
       }
+    }
+    continue;
+  }  // end 'if process'
+  if (train) {
+    // step through current line providing classification; q exits.
+    ofstream responseStream;
+    char filenameBase[200];
+    sprintf(filenameBase, "training/data/%s.%d", filename.c_str(), lineIndex);
+    char responseFileName[250];
+    sprintf(responseFileName, "training/data/responses.%s.%d",
+            filename.c_str(), lineIndex);
+    // must make sure this file doesn't exist.
+    responseStream.open(responseFileName);
+    shapeFinder.getTrainingDataForLine(
+      focused, "processed", "what is this?", filenameBase, responseStream);
+    responseStream.close();
+    continue;
   }
-  }
+  if (detect) {
+    if (!knn->isTrained()) {
+      cerr << "Need a trained model." << endl;
+      continue;
+    }
+    // step through current line showing predictions; q exits.
+    vector<vector<Point>> contours;
+    vector<Vec4i> hierarchy;
+    findContours(processed, contours, hierarchy, RETR_TREE,
+                 CHAIN_APPROX_SIMPLE, Point(0, 0));
+    cvtColor(processed, cont, COLOR_GRAY2BGR);
+    vector<Rect> rectangles(contours.size());
+    vector<vector<Point>> hull(contours.size());
+    for (int i = 0; i < contours.size(); i++) {
+      auto colour = Scalar(0, 0, 255);
+      if (hierarchy[i][3] == -1) {
+        colour = Scalar(255, 0, 0);
+      } else if (hierarchy[i][2] == -1) {
+        colour = Scalar(0, 255, 0);
+      }
+      drawContours(cont, contours, i, colour, 1, 8,
+                   hierarchy, 0, Point(0, 0));
+      convexHull(Mat(contours[i]), hull[i], false);
+      rectangles[i] = boundingRect(Mat(hull[i]));
+    }
+    imshow("processed", cont);
+    std::sort(rectangles.begin(), rectangles.end(), musicocr::rectLeft);
+    musicocr::SampleData sd;
+    for (int i = 0; i < rectangles.size(); i++) {
+      rectangle(cont, rectangles[i], Scalar(0, 0, 127), 2);
+      imshow("processed", cont);
 
+      Mat partial = Mat(focused, rectangles[i]);
+      cout << "showing contour with area " << rectangles[i].area()
+           << " at coordinates " << rectangles[i].tl()
+           << " to " << rectangles[i].br() << endl;
+      Mat scaleup;
+      resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
+      imshow("what is this?", scaleup);
+
+      // what does the system think this is.
+      cv::Mat predictions;
+      cv::Mat sample = sd.makeSampleMatrix(
+          partial, rectangles[i].tl().x, rectangles[i].tl().y);
+      knn->findNearest(sample, 5, predictions);
+      cout << "knn says this is a "
+           << predictions.at<float>(0, 0) << endl;
+      input = waitKeyEx(0);
+      if (input == 'q') break;
+    }
+    continue;
+  }
+  }
   return 0;
 }

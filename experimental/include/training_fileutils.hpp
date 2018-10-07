@@ -17,27 +17,24 @@ namespace musicocr {
 // Reads sample images and responses from files.
 class SampleDataFiles {
   public:
-    SampleDataFiles() {
-      data_collector.reset(new SampleData);
-    }
-    SampleDataFiles(SampleData* data) : data_collector(data) {}
     static bool parseFilename(char *filename,
                               char *imagesetname,
-                              int *linenumber, int *index);
+                              int *linenumber, int *index,
+                              int *xcoord, int *ycoord);
 
     // All files in dirname.
-    void readFiles(const std::string& dirname);
+    void readFiles(const std::string& dirname, SampleData&);
 
     // Only one dataset.
-    void readFiles(const std::string& dirname, const std::string& dataset);
+    void readFiles(const std::string& dirname, const std::string& dataset,
+                   SampleData&);
 
   private:
-    // dataset name -> [line number -> number of items]
-    std::map<std::string, std::map<int, int>> datasets;
+    // dataset name -> [line number -> list of x,y coords]
+    std::map<std::string, std::map<int,
+             std::vector<std::pair<int, int>>>> datasets;
     // dataset name -> [line number -> list of responses]
     std::map<std::string, std::map<int, std::vector<int>>> responses;
-
-    std::unique_ptr<SampleData> data_collector;
 };
 
 }  // namespace musicocr

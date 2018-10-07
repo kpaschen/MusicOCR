@@ -17,14 +17,17 @@ int main(int argc, char** argv) {
     datasetname = argv[3];
   }
 
-  musicocr::SampleData* collector = new musicocr::SampleData();
-  // Would be nicer to just pass the collector to readFiles.
-  musicocr::SampleDataFiles files(collector);
-  files.readFiles(directory, datasetname);
+  musicocr::SampleData collector;
+  musicocr::SampleDataFiles files;
+  files.readFiles(directory, datasetname, collector);
 
+  std::cout << "loading model from " << modelfile << std::endl;
   cv::Ptr<cv::ml::KNearest> knn = cv::ml::StatModel::load<cv::ml::KNearest>(modelfile);
   cv::Mat predictions, neighbours, dist;
-  int quality = collector->runClassifier(knn, 3, predictions, neighbours, dist);
+  std::ofstream out;
+  out.open("/tmp/modeloutput." + modelfile);
+  int quality = collector.runClassifier(knn, 3, predictions,
+                                        neighbours, dist, out);
 
   std::cout << "quality on data set " << directory << "/" << datasetname
             << ": " << quality << std::endl;

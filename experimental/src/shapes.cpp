@@ -30,6 +30,7 @@ void ShapeFinder::getTrainingDataForLine(const Mat& focused,
   Mat tmp = Mat::zeros(processed.rows, processed.cols, processed.type());
   GaussianBlur(processed, tmp, Size(config.gaussianKernel, config.gaussianKernel),
                0, 0);
+  tmp.copyTo(processed);
 #if 0
   Canny(tmp, processed, config.cannyMin, config.cannyMax,
         config.sobelKernel, config.l2Gradient);
@@ -78,8 +79,10 @@ void ShapeFinder::getTrainingDataForLine(const Mat& focused,
     cout << "category: " << cat << endl;
     if (cat == 'q') return;
 
-    // May want to save the coordinates too.
-    sprintf(fname, "%s.%d.png", filename.c_str(), i);
+    // This is awkward, because I'm encoding the coordinates in
+    // the filename, but seems like the least bad option.
+    sprintf(fname, "%s.%d.%d.%d.png", filename.c_str(), i,
+            rectangles[i].tl().x, rectangles[i].tl().y);
 
     // Partial is an 8-bit grayscale image.
     if (imwrite(fname, partial)) {
