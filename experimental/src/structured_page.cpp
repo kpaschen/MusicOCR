@@ -10,42 +10,79 @@ namespace musicocr {
 using namespace std;
 using namespace cv;
 
-vector<Vec4i> Sheet::find_lines(const Mat& warped) const {
+// Find horizontal lines
+vector<Vec4i> Sheet::find_lines(const Mat& processed) const {
   Mat tmp;
-  GaussianBlur(warped, tmp, Size(config.gaussianKernel,
-               config.gaussianKernel), 0, 0);
-  threshold(tmp, tmp, config.thresholdValue, 255, config.thresholdType);
+  equalizeHist(processed, tmp);
+  Mat horizontalStructure = getStructuringElement(MORPH_RECT,
+      Size(processed.cols/30, 1));
+  dilate(tmp, tmp, horizontalStructure, Point(-1, -1));
+  erode(tmp, tmp, horizontalStructure, Point(-1, -1));
+  GaussianBlur(tmp, tmp, Size(config.gaussianKernel, config.gaussianKernel), 0, 0);
   Canny(tmp, tmp, config.cannyMin, config.cannyMax, config.sobel,
         config.l2Gradient);
 
   vector<Vec4i> lines;
   HoughLinesP(tmp, lines, 1, CV_PI/180.0, config.houghThreshold,
               config.houghMinLineLength, config.houghMaxLineGap);
+  cout << "findLines: " << lines.size() << " found." << endl;
+  tmp.release();
 
   return lines;
 }
 
+vector<Vec4i> Sheet::findVerticalLines(const Mat& processed) const {
+  Mat tmp;
+  Mat horizontalStructure = getStructuringElement(MORPH_RECT,
+      Size(processed.cols/30, 1));
+  dilate(processed, tmp, horizontalStructure, Point(-1, -1));
+  erode(tmp, tmp, horizontalStructure, Point(-1, -1));
+  tmp = processed + ~tmp;
+/*
+  Mat verticalStructure = getStructuringElement(MORPH_RECT,
+     Size(1, processed.rows/30));
+  erode(tmp, tmp, verticalStructure, Point(-1, -1));
+  dilate(tmp, tmp, verticalStructure, Point(-1, -1));
+*/
+/*
+  GaussianBlur(tmp, tmp, Size(7, 7), 0, 0);
+  threshold(tmp, tmp, config.thresholdValue, 255, config.thresholdType);
+*/
+
+  Canny(tmp, tmp, config.cannyMin, config.cannyMax, config.sobel,
+        config.l2Gradient);
+
+  vector<Vec4i> lines;
+  HoughLinesP(tmp, lines, 1, CV_PI/180.0, 100, 50, 15);
+  // HoughLinesP(tmp, lines, 1, CV_PI/180.0, 50, 23, 15);
+  cout << "findVerticalLines: " << lines.size() << " found." << endl;
+  tmp.release();
+
+  return lines;
+}
+
+vector<int> Sheet::getSheetInfo() const {
+  vector<int> ret;
+  for (const auto& g : lineGroups) {
+    ret.push_back(g->size());
+  }
+  return ret;
+}
 
 void Sheet::printSheetInfo() const {
   cout << "Sheet has " << size() << " line groups." << endl;
   if (config.voices > 0) {
     cout << "set number of voices: " << config.voices << endl;
   } else {
-    for (const auto& g : lineGroups) {
-      cout << "line group with " << g->size() << " voices." << endl;
+    vector<int> voices = getSheetInfo();
+    for (int v : voices) {
+      cout << "line group with " << v << " voices." << endl;
     }
   }
 }
 
-void Sheet::analyseLines(const vector<Vec4i>& lines, const Mat& clines) {
-  vector<Vec4i> horizontal;
-  vector<Vec4i> vertical;
-  for (const auto& l : lines) {
-    const short h = lineIsHorizontal(l);
-    if (h == 1) horizontal.push_back(l);
-    else if (h == 0) vertical.push_back(l);
-  }
-
+void Sheet::analyseLines(vector<Vec4i>& horizontal,
+     vector<Vec4i>& vertical, const Mat& clines) {
   vector<SheetLine> sheetLines;
   std::sort(horizontal.begin(), horizontal.end(), moreTop);
   SheetLine::collectSheetLines(horizontal, &sheetLines, clines);
@@ -68,7 +105,7 @@ void Sheet::analyseLines(const vector<Vec4i>& lines, const Mat& clines) {
   std::sort(sortedVerticalLines.begin(), sortedVerticalLines.end(),
             musicocr::moreLeft);
 
-   initLineGroups(sortedVerticalLines, sheetLines, clines);
+  initLineGroups(sortedVerticalLines, sheetLines, clines);
 }
 
 void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
@@ -77,6 +114,8 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
   LineGroup *group = new LineGroup();
   addLineGroup(group);
 
+  // This is probably wrong because sometimes there are lines that
+  // are in between voice groups, or that have a title in them.
   if (config.voices > 0) {
     for (const auto& l : sheetLines) {
       if (group->size() >= config.voices) {
@@ -101,6 +140,8 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
     std::vector<Vec4i> newCrossings;
     int intersectSize = 0;
     for (const auto& v : verticalLines) {
+      line(clines, Point(v[0], v[1]), Point(v[2], v[3]),
+           Scalar(0, 0, 255), 1);
       if (l.crossedBy(v)) {
         newCrossings.push_back(v);
         for (const auto& c : crossings) {
@@ -164,7 +205,7 @@ pair<int, int> Sheet::overallLeftRight(const vector<SheetLine>& lines) {
       maxRight = right;
     }
   }
-  return pair<int, int>(fudge * maxLeft.first, fudge * maxRight.first + fudge);
+  return pair<int, int>(fudge * maxLeft.first - fudge, fudge * maxRight.first + fudge);
 }
 
 SheetLine::SheetLine(const vector<Vec4i>& l, const Mat& wholePage) {
@@ -287,8 +328,8 @@ void SheetLine::collectSheetLines(const vector<Vec4i>& horizontalLines,
     if (gap < 7) {
       currentGroup.push_back(curr);
       lastLineHeight = curr[1];
-      // line(clines, Point(curr[0], curr[1]), Point(curr[2], curr[3]),
-      //      sheetLineColour, 2);
+       line(clines, Point(curr[0], curr[1]), Point(curr[2], curr[3]),
+            sheetLineColour, 2);
       continue;
     }
     if (gap >= 20) {
@@ -320,44 +361,5 @@ void SheetLine::collectSheetLines(const vector<Vec4i>& horizontalLines,
   }
   sheetLines->push_back(SheetLine(currentGroup, clines));
 }
-
-
-
-// This isn't adding much, just keeping the code for now.
-void maybeCombineVerticalLines(
-   const std::vector<cv::Vec4i>& sortedVerticalLines,
-   std::vector<cv::Vec4i> *combinedVerticalLines) {
-  int advance = 1;
-  for (size_t i = 0; i < sortedVerticalLines.size(); i += advance) {
-    const cv::Vec4i& tmp = sortedVerticalLines[i];
-    cv::Vec4i currentLine;
-    // make sure currentLine is top-to-bottom.
-    if (tmp[1] > tmp[3]) {
-      currentLine = {tmp[2], tmp[3], tmp[0], tmp[1]};
-    } else {
-      currentLine = {tmp[0], tmp[1], tmp[2], tmp[3]};
-    }
-    advance = 1;
-    for (size_t j = i+1; j < sortedVerticalLines.size(); j++) {
-      const cv::Vec4i& candidate = sortedVerticalLines[j];
-      if (musicocr::maybeSameLine(currentLine, candidate, 6)) {
-        int newBottom, newWidth;
-        if (candidate[1] < candidate[3]) {
-          newBottom = candidate[3];
-          newWidth = candidate[2];
-        } else {
-          newBottom = candidate[1];
-          newWidth = candidate[0];
-        }
-        advance++;
-        currentLine[2] = newWidth;
-        currentLine[3] = newBottom;
-      }
-    }
-    combinedVerticalLines->push_back(currentLine);
-    advance = 1;
-  }
-}
-
 
 }  // namespace musicocr

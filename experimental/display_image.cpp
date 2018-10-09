@@ -201,7 +201,8 @@ void onTrackbar(int, void *) {
     }
     Mat cdst;
     cvtColor(warped, cdst, COLOR_GRAY2BGR);
-    sheet.analyseLines(lines, cdst);
+    vector<Vec4i> v = sheet.findVerticalLines(warped);
+    sheet.analyseLines(lines, v, cdst);
 
     sheet.printSheetInfo();
     imshow("Grid", cdst);
@@ -390,7 +391,8 @@ int main(int argc, char** argv) {
   Mat cdst;
   cvtColor(warped, cdst, COLOR_GRAY2BGR);
 
-  sheet.analyseLines(lines, cdst);
+  vector<Vec4i> v = sheet.findVerticalLines(warped);
+  sheet.analyseLines(lines, v, cdst);
   sheet.printSheetInfo();
 
   //namedWindow("Grid", WINDOW_AUTOSIZE);

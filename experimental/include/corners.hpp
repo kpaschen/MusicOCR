@@ -10,17 +10,17 @@ namespace musicocr {
 using namespace cv;
 
   struct CornerConfig {
-    int gaussianKernel = 3;
+    int gaussianKernel = 15;
     double thresholdValue = 0.0;
     int thresholdType = 4 + THRESH_OTSU;
-    int cannyMin = 80;
+    int cannyMin = 50;
     int cannyMax = 90;
     int sobelKernel = 3;
     bool l2gradient = false;
     double houghResolution = 1.0;
     double houghResolutionRad = 1.0;
-    int houghThreshold = 100;
-    int houghMinLinLength = 50;
+    int houghThreshold = 50;
+    int houghMinLinLength = 32;
     int houghMaxLineGap = 15;
   };
 
@@ -33,7 +33,9 @@ using namespace cv;
                          const std::vector<cv::Point>& corners);
     std::vector<cv::Point> find_corners(const std::vector<cv::Vec4i>& lines,
                                         int width, int height) const;
+    bool shouldRotate(const cv::Mat&) const;
     static bool mostLinesAreHorizontal(const std::vector<cv::Vec4i>& lines);
+    void adjust(const cv::Mat& image, cv::Mat& target);
 
    private:
     cv::Vec4i getOutline(std::vector<cv::Vec4i>& lines,

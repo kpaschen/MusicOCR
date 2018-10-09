@@ -13,15 +13,15 @@ class LineGroup;
 
 struct SheetConfig {
   int voices = 0; // 0: determine algorithmically
-  int gaussianKernel = 9; // 7 or 9?
+  int gaussianKernel = 3; // 7 or 9?
   double thresholdValue = 0.0; 
   int thresholdType = 3;  // no OTSU
   int cannyMin = 80;
-  int cannyMax = 121;
-  int sobel = 5;
+  int cannyMax = 90;
+  int sobel = 3;
   bool l2Gradient = false;
-  int houghThreshold = 82;
-  int houghMinLineLength = 23;
+  int houghThreshold = 100;
+  int houghMinLineLength = 50;
   int houghMaxLineGap = 15;
 };
 
@@ -30,7 +30,10 @@ class Sheet {
    Sheet(const SheetConfig& c) : config(c) {}
    Sheet() {}
 
+   // This finds the horizontal lines.
    std::vector<cv::Vec4i> find_lines(const cv::Mat& warped) const;
+
+   std::vector<cv::Vec4i> findVerticalLines(const cv::Mat&) const;
 
    // Determine general left/right margins.
    static std::pair<int, int> overallLeftRight(const std::vector<SheetLine>&);
@@ -47,8 +50,10 @@ class Sheet {
      return *lineGroups[i];
    }
 
-   void analyseLines(const std::vector<cv::Vec4i>&, const cv::Mat&);
+   void analyseLines(std::vector<cv::Vec4i>&,
+                     std::vector<cv::Vec4i>&, const cv::Mat&);
    void printSheetInfo() const; 
+   std::vector<int> getSheetInfo() const;
 
  private:
    void initLineGroups(const std::vector<cv::Vec4i>& verticalLines,

@@ -17,6 +17,9 @@ target_link_libraries(musicocr ${OpenCV_LIBS})
 add_executable(DisplayImage display_image.cpp)
 target_link_libraries(DisplayImage musicocr)
 
+add_executable(OcrShell ocr_shell.cpp)
+target_link_libraries(OcrShell musicocr)
+
 add_executable(TrainKnn train_knn.cpp)
 target_link_libraries(TrainKnn musicocr)
 

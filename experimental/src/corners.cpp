@@ -17,16 +17,27 @@ std::vector<cv::Vec4i> CornerFinder::find_lines(const cv::Mat& image) const {
   threshold(tmp, tmp, config.thresholdValue, 255, config.thresholdType);
   Canny(tmp, tmp, config.cannyMin, config.cannyMax, config.sobelKernel,
         config.l2gradient);
-  //namedWindow("Canny", WINDOW_AUTOSIZE);
-  // imshow("Canny", tmp);
 
   vector<Vec4i> lines;
-  // Hardcoding the resolution because playing with it only ever made
-  // things worse.
   HoughLinesP(tmp, lines, 1, CV_PI/180.0, config.houghThreshold,
                config.houghMinLinLength, config.houghMaxLineGap);
+  tmp.release();
 
   return lines;
+}
+
+bool CornerFinder::shouldRotate(const cv::Mat& image) const {
+  Mat tmp;
+  GaussianBlur(image, tmp, Size(config.gaussianKernel, config.gaussianKernel),
+               0, 0);
+  equalizeHist(tmp, tmp);
+  Canny(tmp, tmp, config.cannyMin, config.cannyMax, config.sobelKernel,
+        config.l2gradient);
+  vector<Vec4i> lines;
+  HoughLinesP(tmp, lines, 1, CV_PI/180.0, config.houghThreshold,
+               config.houghMinLinLength, config.houghMaxLineGap);
+  tmp.release();
+  return !mostLinesAreHorizontal(lines);
 }
 
 cv::Point getIntersection(cv::Vec4i l1, cv::Vec4i l2) {
@@ -63,10 +74,8 @@ cv::Vec4i CornerFinder::getOutline(std::vector<cv::Vec4i>& lines,
     } 
   }
   if (lines.size() == 1) {
-    // Should we have a minimal length for these?
-    const int dist = (orientation % 2 ? std::abs(lines[0][0] - lines[0][2])
-                      : std::abs(lines[0][1] - lines[0][3]));
-    cout << "only one line, of length " << dist << endl;
+    const int dist = (orientation % 2 ? std::abs(lines[0][1] - lines[0][3])
+                      : std::abs(lines[0][0] - lines[0][2]));
     return {lines[0][0], lines[0][1], lines[0][2], lines[0][3]};
   }
   switch(orientation) {
@@ -142,6 +151,27 @@ std::vector<cv::Point> CornerFinder::find_corners(
   leftLine = getOutline(leftLines, 1, width, height);
   rightLine = getOutline(rightLines, 3, width, height);
 
+  const int topLineWidth = std::abs(topLine[0] - topLine[2]);
+  if (width / topLineWidth > 18) {
+    cout << "top line too short, snapping to edge of paper." << endl;
+    topLine = {0, 0, width, 0};
+  }
+  const int bottomLineWidth = std::abs(bottomLine[0] - bottomLine[2]);
+  if (width / bottomLineWidth > 18) {
+    cout << "bottom line too short, snapping to edge of paper." << endl;
+    bottomLine = {0, height, width, height};
+  }
+  const int leftLineHeight = std::abs(leftLine[1] - leftLine[3]);
+  if (height / leftLineHeight > 18) {
+    cout << "left line too short, snapping to edge of paper." << endl;
+    leftLine = {0, 0, 0, height};
+  }
+  const int rightLineHeight = std::abs(rightLine[1] - rightLine[3]);
+  if (height / rightLineHeight > 18) {
+    cout << "right line too short, snapping to edge of paper." << endl;
+    rightLine = {width, 0, width, height};
+  }
+
   // Extend lines to edge of paper
   topLine[0] = 0; topLine[2] = width;
   bottomLine[0] = 0; bottomLine[2] = width;
@@ -188,6 +218,15 @@ void CornerFinder::adjustToCorners(const cv::Mat& image, cv::Mat& warp,
 
   Mat lambda = getPerspectiveTransform(source, target);
   warpPerspective(image, warp, lambda, warp.size());
+}
+
+void CornerFinder::adjust(const cv::Mat& image, cv::Mat& target) {
+  std::vector<cv::Vec4i> lines = find_lines(image);
+  std::vector<cv::Point> corners = find_corners(lines, image.cols, image.rows); 
+  adjustToCorners(image, target, corners);
+  if (shouldRotate(target)) {
+    cv::rotate(target, target, cv::ROTATE_90_COUNTERCLOCKWISE);
+  }
 }
 
 } // namespace musicocr
