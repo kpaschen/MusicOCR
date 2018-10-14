@@ -23,16 +23,44 @@ bool SampleDataFiles::parseFilename(char* filename, char* imagesetname,
   return false;
 }
 
-void SampleDataFiles::readFiles(const string& dirname, SampleData& collector) {
-  readFiles(dirname, "", collector);
+string SampleDataFiles::datasetNameFromDirectoryName(
+    const string& directory) {
+  return directory.substr(directory.find_last_of("/") + 1);  
 }
 
-void SampleDataFiles::readFiles(const string& dirname, const string& dataset,
+string SampleDataFiles::makeModelOutputName(const string& dsname,
+                                            const string& modeltype) {
+  return "/tmp/training/modelout." + dsname + "." + modeltype + ".csv";
+}
+
+string SampleDataFiles::modelFileName(const string& basename,
+                                      const string& type) {
+  return basename + "." + type + ".yaml";
+}
+
+int SampleDataFiles::parseModelFileName(const string& model,
+                                        char* trainingset,
+                                        char* modeltype) {
+  // strtok might be better.
+  return sscanf(model.c_str(), "model.%[^.].%[^.].yaml", trainingset, modeltype);
+}
+
+
+void SampleDataFiles::readFiles(const string& dirname,
+                                const string& datasetname,
+                                SampleData& collector) {
+  readFiles(dirname, datasetname, "", collector);
+}
+
+void SampleDataFiles::readFiles(const string& dirname,
+                                const string& dataset,
+                                const string& filenames,
                                 SampleData& collector) {
   DIR* dirp = opendir(dirname.c_str());
   struct dirent *dp;
   char trainingset[50];
   int lno, idx, xcoord, ycoord;
+  musicocr::TrainingKey key;
 
   while((dp = readdir(dirp)) != NULL) {
     char* filename = dp->d_name;
@@ -40,7 +68,7 @@ void SampleDataFiles::readFiles(const string& dirname, const string& dataset,
       cerr << "Could not parse file name " << filename << ", skipping." << endl;
       continue;
     }
-    if (dataset != "" && trainingset != dataset) {
+    if (filenames != "" && trainingset != filenames) {
       continue;
     }
     if (idx == -1) {  // responses file
@@ -49,17 +77,15 @@ void SampleDataFiles::readFiles(const string& dirname, const string& dataset,
       sprintf(rfilename, "%s/%s", dirname.c_str(), filename);
       std::ifstream r;
       r.open(rfilename);
-      // could check r.good() here but then if the file does not exist
-      // there's a bigger logical error and we'll fail downstream anyway.
-      char l[9];
+      char l[20];
       int idx, cat;
-      while (!r.eof()) {
-        r.getline(l, 9);
-        if (sscanf(l, "%d: %d", &idx, &cat) != 2) {
+      while (r.good() && !r.eof()) {
+        r.getline(l, 19);
+        if (strlen(l) < 2 || sscanf(l, "%d: %d", &idx, &cat) != 2) {
           cerr << "Bad response line: " << l << ", skipping." << endl;
           continue;
         }
-        resp.push_back(cat);
+        resp.push_back(key.getCategoryForStatModel(cat));
       }
       if (responses.find(trainingset) == responses.end()) {
         responses.emplace(trainingset, map<int, vector<int>>());
@@ -72,20 +98,20 @@ void SampleDataFiles::readFiles(const string& dirname, const string& dataset,
     } else {  // sample image
       if (datasets.find(trainingset) == datasets.end()) {
         datasets.emplace(trainingset,
-                         map<int, vector<std::pair<int, int>>>());
+                         map<int, map<int, std::pair<int, int>>>());
       }
-      map<int, std::vector<std::pair<int, int>>>& tset =
+      map<int, std::map<int, std::pair<int, int>>>& tset =
         datasets.find(trainingset)->second;
       if (tset.find(lno) == tset.end()) {
-        tset[lno] = std::vector<std::pair<int, int>>();
+        tset[lno] = std::map<int, std::pair<int, int>>();
       }
-      std::vector<std::pair<int, int>>& coords = tset.find(lno)->second;
-      coords.emplace_back(xcoord, ycoord);
+      std::map<int, std::pair<int, int>>& coords = tset.find(lno)->second;
+      coords.emplace(idx, std::make_pair(xcoord, ycoord));
     }
   }
   for (const auto& sample : datasets) {
     const string& name = sample.first;
-    const map<int, vector<std::pair<int, int>>>& tset = sample.second;
+    const map<int, map<int, std::pair<int, int>>>& tset = sample.second;
     const map<int, vector<int>>& lineresponses = responses[name];
     char rfilename[dirname.size() + name.size() + 20];
     for (const auto& tset_iter : tset) {
@@ -103,7 +129,7 @@ void SampleDataFiles::readFiles(const string& dirname, const string& dataset,
         // TODO: to be really safe on sprintf here, should make sure
         // i and j aren't too big: usually i is at most 12 and j might reach 100.
         // rfilename isn't sized for more.
-        const std::pair<int, int>& coords = tset_iter.second[j];
+        const std::pair<int, int>& coords = tset_iter.second.find(j)->second;
         sprintf(rfilename, "%s/%s.%d.%d.%d.%d.png", dirname.c_str(),
                 name.c_str(), i, j, coords.first, coords.second);
         // This will dump core if the file does not exist, but then that

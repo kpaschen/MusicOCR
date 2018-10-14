@@ -9,21 +9,30 @@ using std::string;
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    cerr << "need a training data directory." << endl;
+    cerr << "TrainKnn <training data directory> [modelfile basename] [file name pattern]" << endl;
     return -1;
   }
-  string modelfile("modelfile.yaml");
+  const string directory = argv[1];
+  string modelfile("");
   if (argc > 2) {
     modelfile = argv[2];
-  } 
-  string datasetname("");
-  if (argc > 3) {
-    datasetname = argv[3];
   }
-  const string directory = argv[1];
+  string filenamepattern("");
+  if (argc > 3) {
+    filenamepattern = argv[3];
+  }
+  // use this for naming output files and models, but don't set
+  // a file name pattern.
+  string datasetname = musicocr::SampleDataFiles::datasetNameFromDirectoryName(
+      directory);
+  // This is for saving the outputs.
+  if (modelfile == "") {
+    modelfile = "model." + datasetname;  
+  }
+
   musicocr::SampleData collector;
   musicocr::SampleDataFiles files;
-  files.readFiles(directory, datasetname, collector);
+  files.readFiles(directory, datasetname, filenamepattern, collector);
 
   cout << "read files, now starting training." << endl;
 
@@ -36,7 +45,8 @@ int main(int argc, char** argv) {
   // training data).
   cv::Mat predictions, foo, bar;
   std::ofstream out;
-  out.open("/tmp/modelout.KNN");
+  out.open(musicocr::SampleDataFiles::makeModelOutputName(
+      datasetname, "KNN"));
   int quality = collector.runClassifier(knn, 3, predictions,
                                          foo, bar, out);
 
@@ -44,22 +54,25 @@ int main(int argc, char** argv) {
             << "/" << datasetname << "): " << quality << endl;
 
   // save model to file
-  knn->save(modelfile + ".knn");
-
-  cout << "wrote model to " << modelfile << endl;
+  knn->save(musicocr::SampleDataFiles::modelFileName(
+    modelfile, "knn"));
+  std::cout << "model written to " << modelfile << ".knn.yaml" << std::endl;
   }
   { // SVM
     cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
     svm->setType(cv::ml::SVM::C_SVC);
+
     collector.trainClassifier(svm);
     cv::Mat outcomes;
     std::ofstream out;
-    out.open("/tmp/modelout.SVM");
+    out.open(musicocr::SampleDataFiles::makeModelOutputName(
+        datasetname, "SVM"));
     int quality = collector.runClassifier(svm, outcomes, out);
     std::cout << "svm quality on training set (" << directory
               << "/" << datasetname << "): " << quality << endl;
-    svm->save(modelfile + ".svm");
-    cout << "wrote model to " << modelfile << endl;
+    svm->save(musicocr::SampleDataFiles::modelFileName(
+      modelfile, "svm"));
+    cout << "wrote svm model to " << modelfile << ".svm.yaml" << endl;
   }
   { // DTrees
     cv::Ptr<cv::ml::DTrees> dtree = cv::ml::DTrees::create();
@@ -69,12 +82,14 @@ int main(int argc, char** argv) {
     collector.trainClassifier(dtree);
     cv::Mat outcomes;
     std::ofstream out;
-    out.open("/tmp/modelout.DTrees");
+    out.open(musicocr::SampleDataFiles::makeModelOutputName(
+        datasetname, "DTrees"));
     int quality = collector.runClassifier(dtree, outcomes, out);
     std::cout << "dtree quality on training set (" << directory
               << "/" << datasetname << "): " << quality << endl;
-    dtree->save(modelfile + ".dtree");
-    cout << "wrote model to " << modelfile << endl;
+    dtree->save(musicocr::SampleDataFiles::modelFileName(
+      modelfile, "dtrees"));
+    cout << "wrote dtree model to " << modelfile << ".dtrees.yaml" << endl;
   }
 
   return 0;

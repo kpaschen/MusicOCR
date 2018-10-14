@@ -36,7 +36,8 @@ class Sheet {
    std::vector<cv::Vec4i> findVerticalLines(const cv::Mat&) const;
 
    // Determine general left/right margins.
-   static std::pair<int, int> overallLeftRight(const std::vector<SheetLine>&);
+   static std::pair<int, int> overallLeftRight(
+     const std::vector<SheetLine>&);
 
    void addLineGroup(LineGroup* group) {
      lineGroups.push_back(std::unique_ptr<LineGroup>(group));
@@ -45,10 +46,12 @@ class Sheet {
    size_t size() const {
      return lineGroups.size();
    }
+   size_t getLineCount() const;
 
    const LineGroup& getNthLineGroup(size_t i) const {
      return *lineGroups[i];
    }
+   const SheetLine& getNthLine(size_t i) const;
 
    void analyseLines(std::vector<cv::Vec4i>&,
                      std::vector<cv::Vec4i>&, const cv::Mat&);

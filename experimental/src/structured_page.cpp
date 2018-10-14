@@ -173,6 +173,25 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
   }
 }
 
+size_t Sheet::getLineCount() const {
+ size_t s = 0;
+ for (const auto& lg : lineGroups) {
+   s += lg->size();
+ }
+ return s;
+}
+
+const SheetLine& Sheet::getNthLine(size_t i) const {
+ size_t cur = 0;
+ for (const auto& lg : lineGroups) {
+   if (cur + lg->size() > i) {
+     return lg->getNthVoice(i-cur);
+   }
+   cur += lg->size();
+ }
+ throw(std::runtime_error("Bad line index."));
+}
+
 
 pair<int, int> Sheet::overallLeftRight(const vector<SheetLine>& lines) {
   // histograms of left and right borders
@@ -213,11 +232,9 @@ SheetLine::SheetLine(const vector<Vec4i>& l, const Mat& wholePage) {
     lines.push_back(x);
   }
   Vec4i topLine = TopLine(lines); 
-
-  const int heightDiff = topLine[1] - topLine[3];
-
-  line(wholePage, Point(topLine[0], topLine[1]), Point(topLine[2], topLine[3]),
-       Scalar(255, 255, 255), 5);
+  line(wholePage, Point(topLine[0], topLine[1]),
+                  Point(topLine[2], topLine[3]),
+                  Scalar(255, 255, 255), 5);
 
   boundingBox = BoundingBox(lines, wholePage.rows, wholePage.cols);
   rectangle(wholePage, boundingBox, Scalar(255, 255, 255), 5);

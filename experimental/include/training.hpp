@@ -7,12 +7,15 @@
 #include <opencv2/ml.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "training_key.hpp"
+
 namespace musicocr {
 
 // Reads sample images and responses, can build training data
 // and response matrices out of this.
 class SampleData {
   public:
+
     cv::Mat makeSampleMatrix(const cv::Mat&, int xcoord, int ycoord) const;
 
     // Add one image and corresponding label.

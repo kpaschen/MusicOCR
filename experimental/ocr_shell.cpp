@@ -9,6 +9,8 @@
 #include "structured_page.hpp"
 #include "shapes.hpp"
 #include "training.hpp"
+#include "training_fileutils.hpp"
+#include "training_key.hpp"
 
 using namespace cv;
 using namespace std;
@@ -19,6 +21,10 @@ using namespace std;
 // work. cdst is a colour version of processed, can have
 // extra markings on it in colour.
 Mat gray, focused, processed, cdst;
+musicocr::Sheet sheet;
+cv::Ptr<cv::ml::StatModel> statModel;
+
+string filename;
 
 int gaussianKernel = 3;
 int thresholdValue = 0;
@@ -97,9 +103,6 @@ void makeSheetConfig(musicocr::SheetConfig *config) {
   config->cannyMax = cannyMax;
   config->sobel = sobelKernel;
   config->l2Gradient = (l2gradient != 0);
-//  config->houghResolution = houghResolution;
-//  config->houghResolutionRad = (double)houghResolutionRad * CV_PI / 180.0;
-//  if (config->houghResolutionRad < 1.0) { config->houghResolutionRad = 1.0; }
   config->houghThreshold = houghThreshold;
   config->houghMinLineLength = houghMinLinLength;
   config->houghMaxLineGap = houghMaxLineGap;
@@ -174,14 +177,15 @@ void setupTrackbars(const string& windowName) {
 
 void findCorners();
 void findLines();
+void navigateSheet();
 void processImage();
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-   cerr << "DisplayImage <Path to Image>";
+   cerr << "OcrShell <Path to Image> [<model file name>]";
    return -1; 
   }
-  string filename = argv[1];
+  filename = argv[1];
   Mat image;
   image = imread(filename, 1);
   if (!image.data) {
@@ -195,9 +199,40 @@ int main(int argc, char** argv) {
   }
   cout << "base name of file: " << filename << endl;
 
+  if (argc > 2) {
+    const string& modelfile = argv[2];
+    // We need the type of the model because statmodel::load
+    // is templatized.
+    char modeltype[20];
+    char trainingset[100];
+    int x = musicocr::SampleDataFiles::parseModelFileName(
+      modelfile, trainingset, modeltype);
+    if (x != 2) {
+      cerr << "Unrecognised model type in file " << modelfile
+           << ", not loading a model." << endl;
+    } else {
+      cout << "model type: " << modeltype << endl;
+      if (strcmp(modeltype, "knn") == 0) {
+        statModel = cv::ml::StatModel::load<cv::ml::KNearest>(modelfile);
+        cout << "loaded knn model" << endl;
+      } else if (strcmp(modeltype, "svm") == 0) {
+        statModel = cv::ml::StatModel::load<cv::ml::SVM>(modelfile);
+        cout << "loaded svm model" << endl;
+      } else if (strcmp(modeltype, "dtrees") == 0){
+        statModel = cv::ml::StatModel::load<cv::ml::DTrees>(modelfile);
+        cout << "loaded dtree model" << endl;
+      }
+      else {
+        cerr << "Unrecognised model type in file " << modelfile
+             << ", not loading a model." << endl;
+      }
+    }
+  }
+
   resize(image, image, Size(), 0.2, 0.2, INTER_AREA);
   namedWindow("Original Image", WINDOW_AUTOSIZE);
   namedWindow("Processed", WINDOW_AUTOSIZE);
+  namedWindow("What is this?", WINDOW_AUTOSIZE);
 
   // everything starts with 'gray'.
   cvtColor(image, gray, COLOR_BGR2GRAY);
@@ -214,8 +249,9 @@ int main(int argc, char** argv) {
   while(!quit) {
     cout << "top level menu. "
          << endl << "'r': reset processed to original. "
-         << endl << "'c': find corners and go to grid finding. "
-         << endl << "'g': find grid and go to navigation. "
+         << endl << "'c': find corners. "
+         << endl << "'g': find grid. "
+         << endl << "'n': start navigating line by line."
          << endl << "'p': enter processing loop."
          << endl << "'x': rotate image."
          << endl;
@@ -230,6 +266,9 @@ int main(int argc, char** argv) {
         break;
       case 'g':
         findLines();
+        break;
+      case 'n':
+        navigateSheet();
         break;
       case 'p':
         processImage();
@@ -254,30 +293,11 @@ void findCorners() {
   // This uses the defaults in the corner finder.
   musicocr::CornerFinder cornerFinder;
   cornerFinder.adjust(gray, focused);
-#if 0
-  vector<Vec4i> lines = cornerFinder.find_lines(gray);
-  vector<Point> corners = cornerFinder.find_corners(lines, gray.cols, gray.rows);
-  cout << "points: " << corners[0] << ", " << corners[1] << ", "
-       << corners[2] << ", " << corners[3] << endl;
-
-  // Crop to corners.
-  Rect c(corners[0], corners[2]);
-  cout << "cropping to " << c << endl;
-
-  cornerFinder.adjustToCorners(gray, focused, corners);
-  bool rotate = cornerFinder.shouldRotate(focused);
-  if (rotate) {
-    cv::rotate(focused, focused, cv::ROTATE_90_COUNTERCLOCKWISE);
-  }
-  //focused = Mat(gray, c);
-#endif
   focused.copyTo(processed);
   imshow("Processed", processed);
 }
 
-
 void findLines() {
-  musicocr::Sheet sheet;
   vector<Vec4i> lines = sheet.find_lines(processed);
   vector<Vec4i> verticalLines = sheet.findVerticalLines(processed);
   cvtColor(processed, cdst, COLOR_GRAY2BGR);
@@ -285,6 +305,116 @@ void findLines() {
   sheet.analyseLines(lines, verticalLines, cdst);
   sheet.printSheetInfo();
   imshow("Processed", cdst);
+}
+
+void navigateSheet() {
+  if (!sheet.size()) {
+    cerr << "Need to use 'g' first to set up a sheet." << endl;
+    return;
+  }
+  int lineIndex = 0;
+  int input;
+  const musicocr::SheetLine& currentLine = sheet.getNthLine(lineIndex);
+  processed = focused(currentLine.getBoundingBox());
+  imshow("Processed", processed);
+
+  musicocr::ContourConfig config;
+  makeContourConfig(&config);
+  musicocr::ShapeFinder shapeFinder(config);
+
+  size_t sheetSize = sheet.getLineCount();
+  bool quit = false;
+
+  while(!quit) {
+    cout << "Per-line menu. Cursor keys to navigate, 'p' to fiddle, "
+         << "'t' to train, 'd' to run a model or 'q' to quit. "
+         << "'d' needs a model loaded." << endl;
+    input = waitKeyEx(0);
+    switch(input) {
+      case 65364: // cursor down
+        {
+        lineIndex++;
+        if (lineIndex >= sheetSize) lineIndex -= sheetSize; 
+        const auto& cur = sheet.getNthLine(lineIndex);
+        cout << "cur has size " << cur.getBoundingBox() << endl;
+        cout << "focused has size " << focused.size() << endl;
+
+        processed = focused(cur.getBoundingBox());
+        imshow("Processed", processed);
+        }
+        break;
+      case 65362: // cursor up
+        {
+        lineIndex--;
+        if (lineIndex < 0) lineIndex += sheetSize;
+        const auto& cur = sheet.getNthLine(lineIndex);
+        processed = focused(cur.getBoundingBox());
+        imshow("Processed", processed);
+        }
+        break;
+      case 'p': 
+        processImage();
+        break;
+      case 't':
+        // step through current line providing classification; q exits.
+        // There is no need to specify a model type here because the
+        // training data collected works for all stat model types.
+        {
+        ofstream responseStream;
+        char filenameBase[200];
+        sprintf(filenameBase, "training/data/%s.%d", filename.c_str(), lineIndex);
+        char responseFileName[250];
+        sprintf(responseFileName, "training/data/responses.%s.%d",
+                filename.c_str(), lineIndex);
+        // this will overwrite the file if it exists.
+        responseStream.open(responseFileName);
+        shapeFinder.getTrainingDataForLine(
+          processed, "Processed", "What is this?", filenameBase,
+          responseStream);
+        responseStream.close();
+        }
+        break;
+      case 'd':
+        {
+          if (!statModel || !statModel->isTrained()) {
+            cerr << "Missing a trained model." << endl;
+            break;
+          }
+          Mat cont;
+          cvtColor(processed, cont, COLOR_GRAY2BGR);
+          musicocr::SampleData sd;
+          vector<cv::Rect> rectangles = shapeFinder.getContourBoxes(
+            processed, cont);
+          musicocr::TrainingKey key;
+          for (int i = 0; i < rectangles.size(); i++) {
+            rectangle(cont, rectangles[i], Scalar(0, 0, 127), 2);
+            imshow("Processed", cont);
+
+            Mat partial = Mat(processed, rectangles[i]);
+            cout << "showing contour with area " << rectangles[i].area()
+                 << " at coordinates " << rectangles[i].tl()
+                 << " to " << rectangles[i].br() << endl;
+            Mat scaleup;
+            resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
+            imshow("What is this?", scaleup);
+
+            // what does the system think this is.
+            cv::Mat sample = sd.makeSampleMatrix(
+                partial, rectangles[i].tl().x, rectangles[i].tl().y);
+            float prediction = statModel->predict(sample); 
+            const string& cat = key.getCategoryName((int)prediction);
+            cout << "stat model says this is a " << cat << endl;
+            input = waitKeyEx(0);
+          }
+        }
+        break;
+      case 'q': 
+        quit = true;
+        break;
+        
+      default: break;
+    }
+  }
 }
 
 void processImage() {

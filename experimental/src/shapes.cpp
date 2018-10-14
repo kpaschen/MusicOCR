@@ -5,11 +5,8 @@
 
 namespace musicocr {
 
-void ShapeFinder::getTrainingDataForLine(const Mat& focused, 
-  const string& processedWindowName,
-  const string& questionWindowName,
-  const string& filename,
-  ofstream& responsesFile) {
+std::vector<cv::Rect> ShapeFinder::getContourBoxes(
+    const Mat& focused, Mat& cont) const {
   Mat processed;
   focused.copyTo(processed);
   // erode, dilate horizontally to get just the horizontal lines.
@@ -24,7 +21,6 @@ void ShapeFinder::getTrainingDataForLine(const Mat& focused,
 
   // Now 'subtract' the horizontal lines from 'focused'.
   processed = focused + ~processed;
-
   // threshold, blur, canny
   threshold(processed, processed, config.thresholdValue, 255, config.thresholdType);
   Mat tmp = Mat::zeros(processed.rows, processed.cols, processed.type());
@@ -41,23 +37,30 @@ void ShapeFinder::getTrainingDataForLine(const Mat& focused,
   findContours(processed, contours, hierarchy, RETR_TREE,
                CHAIN_APPROX_SIMPLE, Point(0, 0));
 
-  // This is just for showing the contours.
-  Mat cont;
-  cvtColor(processed, cont, COLOR_GRAY2BGR);
   vector<Rect> rectangles(contours.size());
   vector<vector<Point>> hull(contours.size());
   for (int i = 0; i < contours.size(); i++) {
-    auto colour = Scalar(0, 0, 255);
-    if (hierarchy[i][3] == -1) {
-      colour = Scalar(255, 0, 0);
-    } else if (hierarchy[i][2] == -1) {
-      colour = Scalar(0, 255, 0);
-    }
-    drawContours(cont, contours, i, colour, 1, 8, hierarchy, 0, Point(0, 0));
+    drawContours(cont, contours, i, Scalar(255, 0, 0), 1, 8,
+      hierarchy, 0, Point(0, 0));
     convexHull(Mat(contours[i]), hull[i], false);
     rectangles[i] = boundingRect(Mat(hull[i]));
   }
   std::sort(rectangles.begin(), rectangles.end(), musicocr::rectLeft);
+  return rectangles;
+}
+
+void ShapeFinder::getTrainingDataForLine(const Mat& focused, 
+  const string& processedWindowName,
+  const string& questionWindowName,
+  const string& filename,
+  ofstream& responsesFile) {
+
+  // This is just for showing the contours.
+  Mat cont;
+  cvtColor(focused, cont, COLOR_GRAY2BGR);
+
+  vector<Rect> rectangles = getContourBoxes(focused, cont); 
+
   Mat partial, scaleup;
   char fname[200];
   for (int i = 0; i < rectangles.size(); i++) {

@@ -7,6 +7,7 @@ namespace musicocr {
   using std::vector;
   using std::map;
 
+
 Mat SampleData::makeSampleMatrix(const Mat& smat, int xcoord, int ycoord) const {
   vector<float> sizeline(imageSize, 0.0);
   sizeline[0] = (float)smat.rows;
@@ -57,11 +58,14 @@ bool SampleData::trainClassifier(cv::Ptr<cv::ml::SVM> model) {
   if (!isReadyToTrain()) { return false; }
   Mat trainingLabels = labels.clone();
   trainingLabels.reshape(1, 1);
+  // trainingLabels.convertTo(trainingLabels, CV_32F);
   // for svm, the labels have to be int not float.
   cv::Ptr<cv::ml::TrainData> trainingData = cv::ml::TrainData::create(
     features, cv::ml::ROW_SAMPLE, trainingLabels);
 
-  model->trainAuto(trainingData);
+  // trainAuto crashes in various different ways.
+  // model->trainAuto(trainingData, 4);
+  model->train(trainingData);
   return true;
 }
 
@@ -83,12 +87,12 @@ int SampleData::runClassifier(cv::Ptr<cv::ml::DTrees> model,
                               std::ostream& out) const {
   if (!isReadyToRun()) { return 0; }
   size_t sameLabel = 0;
+  out << "index, expected, predicted" << std::endl;
   for (size_t i = 0; i < features.rows; i++) {
     const Mat& row = features.row(i);
     float response = model->predict(row);
     int expected = labels.at<int>(0, i);
-    out << "predicted label for " << i << ": " << (int)response << std::endl;
-    out << "expected: " << expected << std::endl;
+    out << i << ", " << expected << ", " << (int)response << std::endl;
     outcomes.push_back(response);
     if ((int)response == expected) {
       sameLabel++;
@@ -103,12 +107,12 @@ int SampleData::runClassifier(cv::Ptr<cv::ml::SVM> svm,
                               std::ostream& out) const {
   if (!isReadyToRun()) { return 0; }
   size_t sameLabel = 0;
+  out << "index, expected, predicted" << std::endl;
   for (size_t i = 0; i < features.rows; i++) {
     const Mat& row = features.row(i);
     float response = svm->predict(row);
     int expected = labels.at<int>(0, i);
-    out << "predicted label for " << i << ": " << (int)response << std::endl;
-    out << "expected: " << expected << std::endl;
+    out << i << ", " << expected << ", " << (int)response << std::endl;
     outcomes.push_back(response);
     if ((int)response == expected) {
       sameLabel++;
@@ -140,12 +144,12 @@ int SampleData::runClassifier(cv::Ptr<cv::ml::KNearest> knn,
   // predictions: one row, #samples columns
   // neighbours: neighbourCount rows, #samples columns
   // dist: neighbourCount rows, #samples columns
+  out << "index, expected, predicted, [neighbours]" << std::endl;
   size_t sameLabel = 0;
   for (size_t i = 0; i < features.rows; i++) {
     const float prediction = predictions.at<float>(i, 0);
     const int expected = labels.at<int>(0, i);
-    out << "predicted label for " << i << ": " << prediction << std::endl;
-    out << "expected: " << expected << std::endl;
+    out << i << ", " << expected << ", " << (float)prediction << ", ";
     if ((int)prediction == expected) {
       sameLabel++;
     }
@@ -153,8 +157,9 @@ int SampleData::runClassifier(cv::Ptr<cv::ml::KNearest> knn,
       // look at neighbours and dist
       float nb = neighbours.at<float>(i, j);
       float d = dist.at<float>(i, j);
-      out << "neighour " << j << ": " << nb << ", dist: " << d << std::endl;
+      out << "neighour " << j << ": " << nb << " dist: " << d << ",";
     }
+    out << std::endl;
   }
   return (int)((float)sameLabel * 100.0 / labels.rows);
 }

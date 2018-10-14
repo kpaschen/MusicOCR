@@ -34,6 +34,8 @@ class ShapeFinder {
      ofstream& responsesFile
    );
 
+   std::vector<cv::Rect> getContourBoxes(const Mat& focused, Mat&) const;
+
  private:
    ContourConfig config;
 
