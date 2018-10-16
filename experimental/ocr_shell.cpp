@@ -298,11 +298,11 @@ void findCorners() {
 }
 
 void findLines() {
-  vector<Vec4i> lines = sheet.find_lines(processed);
-  vector<Vec4i> verticalLines = sheet.findVerticalLines(processed);
   cvtColor(processed, cdst, COLOR_GRAY2BGR);
-
-  sheet.analyseLines(lines, verticalLines, cdst);
+  vector<Rect> lineContours = sheet.find_lines_outlines(processed);
+  // It might be better to do this during contour finding.
+  vector<Vec4i> verticalLines = sheet.findVerticalLines(processed);
+  sheet.analyseLines(lineContours, verticalLines, cdst);
   sheet.printSheetInfo();
   imshow("Processed", cdst);
 }
@@ -314,12 +314,8 @@ void navigateSheet() {
   }
   int lineIndex = 0;
   int input;
-  const musicocr::SheetLine& currentLine = sheet.getNthLine(lineIndex);
+  musicocr::SheetLine currentLine = sheet.getNthLine(lineIndex);
 
-  cout << "currentLine has bounding box " << currentLine.getBoundingBox()
-       << endl;
-  cout << "focused has dimensions " << focused.size() << endl;
-  
   processed = focused(currentLine.getBoundingBox());
   imshow("Processed", processed);
 
@@ -340,11 +336,8 @@ void navigateSheet() {
         {
         lineIndex++;
         if (lineIndex >= sheetSize) lineIndex -= sheetSize; 
-        const auto& cur = sheet.getNthLine(lineIndex);
-        cout << "cur has size " << cur.getBoundingBox() << endl;
-        cout << "focused has size " << focused.size() << endl;
-
-        processed = focused(cur.getBoundingBox());
+        currentLine = sheet.getNthLine(lineIndex);
+        processed = focused(currentLine.getBoundingBox());
         imshow("Processed", processed);
         }
         break;
@@ -352,8 +345,8 @@ void navigateSheet() {
         {
         lineIndex--;
         if (lineIndex < 0) lineIndex += sheetSize;
-        const auto& cur = sheet.getNthLine(lineIndex);
-        processed = focused(cur.getBoundingBox());
+        currentLine = sheet.getNthLine(lineIndex);
+        processed = focused(currentLine.getBoundingBox());
         imshow("Processed", processed);
         }
         break;
@@ -412,6 +405,110 @@ void navigateSheet() {
             input = waitKeyEx(0);
           }
         }
+        break;
+      case 'z':  // coordinate system
+      {
+          Mat tmp = processed.clone();
+          const Rect& ib = currentLine.getInnerBox();
+          const Rect relative = ib - currentLine.getBoundingBox().tl();
+               
+          cvtColor(tmp, cdst, COLOR_GRAY2BGR);
+
+          const int edHorizontalWidth = tmp.cols / edHorizontalSizeFudge;
+          Mat horizontalStructure = getStructuringElement(MORPH_RECT,
+            Size(edHorizontalWidth, edHorizontalHeight));
+          dilate(tmp, tmp, horizontalStructure, Point(-1, -1));
+          erode(tmp, tmp, horizontalStructure, Point(-1, -1));
+
+          GaussianBlur(tmp, tmp, Size(3, 3), 0, 0);
+
+          threshold(tmp, tmp, (float)thresholdValue/255.0, 255,
+            (thresholdType + (useOtsu ? THRESH_OTSU : 0)));
+
+          // Without canny, you get a lot of noise in the lines.
+          Canny(tmp, tmp, cannyMin, cannyMax, sobelKernel, (l2gradient > 0));
+          vector<Vec4i> lines;
+          HoughLinesP(tmp, lines, 1, 2.0 * CV_PI/180.0, 70, 23, 32);
+          std::sort(lines.begin(), lines.end(), musicocr::moreRight);
+          std::sort(lines.begin(), lines.end(), musicocr::moreTop);
+          vector<Vec4i> horizontals;
+          const Scalar colour1(0, 0, 255);
+          const Scalar colour2(255, 0, 0);
+          Scalar currentColour = colour1;
+          cvtColor(tmp, cdst, COLOR_GRAY2BGR);
+          for (size_t i = 0; i < lines.size(); i++) {
+            const auto& l = lines[i];
+            // Skip lines that are outside the inner box.
+            if (!relative.contains(Point(l[0], l[1])) ||
+                !relative.contains(Point(l[2], l[3]))) {
+              continue;
+            }
+            int currentHeight = l[1];
+            Point lp(l[0], l[1]); Point rp(l[2], l[3]);
+            int top = std::min(l[1], l[3]), bottom = std::max(l[1], l[3]);
+            for (size_t j = i+1; j < lines.size(); j++) {
+              const auto& k = lines[j];
+              if (k[1] - bottom <= 2) {
+                if (k[2] <= lp.x || k[0] >= rp.x) {
+                  if (k[2] <= lp.x) {
+                    lp = Point(k[0], k[1]);
+                  }
+                  if (k[0] >= rp.x) {
+                    rp = Point(k[2], k[3]);
+                  }
+                  top = std::min(top, std::min(k[1], k[3]));
+                  bottom = std::max(bottom, std::max(k[1], k[3]));
+                } else {
+                  i = j + 1;
+                  break;
+                }
+              } else {
+                  i = j + 1;
+                  break;
+              }
+            }
+            horizontals.emplace_back(Vec4i(lp.x, lp.y, rp.x, rp.y));
+            line(cdst, lp, rp, currentColour, 1);
+            if (currentColour == colour1) currentColour = colour2;
+            else currentColour = colour1;
+          }
+          vector<Vec4i> gridLinesH;
+          int lastHeight = 0;
+          int bestLeft = 500, bestRight = 0;
+          for (size_t i = 0; i < horizontals.size(); i++) {
+            const auto& candidate = horizontals[i];
+            float slope = (float)(candidate[1]-candidate[3])/std::abs(candidate[0] - candidate[2]);
+            cout << "line with xwdith " << (candidate[2] - candidate[0])
+                 << " and  slope " << slope << endl;
+            if (!gridLinesH.empty() && candidate[1] - lastHeight >= 12
+                && lastHeight < 50) {
+              cout << "resetting at height " << lastHeight << endl;
+              bestLeft = 500, bestRight = 0;
+              gridLinesH.clear();
+            }
+            gridLinesH.push_back(candidate);
+            lastHeight = candidate[1];
+            if (candidate[0] < bestLeft) bestLeft = candidate[0];
+            if (candidate[2] > bestRight) bestRight = candidate[2];
+          }
+          if (!gridLinesH.size()) {
+            cout << "no gridlines found!" << endl;
+          } else {
+          cout << "got " << gridLinesH.size() << " horizontal lines"
+               << " and total height "
+               << gridLinesH[0][1] << " to " << gridLinesH.back()[1]
+               << endl;
+          if (gridLinesH.size() > 5 && 
+              std::abs(gridLinesH[0][1] - gridLinesH.back()[1]) > 25) {
+            rectangle(cdst, Point(bestLeft, gridLinesH[0][1]),
+                      Point(bestRight, gridLinesH.back()[3]),
+                      Scalar(255, 255, 255), 1);
+            imshow("What is this?", cdst);
+          } else {
+            cout << "This is not a line with notes" << endl;
+          }
+          }
+      }
         break;
       case 'q': 
         quit = true;
@@ -551,6 +648,8 @@ void processImage() {
                      hierarchy, 0, Point(0, 0));
         convexHull(Mat(contours[i]), hull[i], false);
         rectangles[i] = boundingRect(Mat(hull[i]));
+        cout << "rectangle with size " << rectangles[i].area() << endl;
+        rectangle(cdst, rectangles[i], Scalar(255, 255, 255), 1);
       }
       imshow("Processed", cdst);
     }
@@ -609,25 +708,6 @@ void processImage() {
             255, (thresholdType + (useOtsu ? THRESH_OTSU : 0)));
        imshow("Processed", processed);
      }
-     break;
-     case 'z' : // try grid line finding.
-       {
-       musicocr::SheetConfig config;
-       makeSheetConfig(&config);
-       musicocr::Sheet sheet(config);
-       vector<Vec4i> lines = sheet.find_lines(processed);
-       vector<Vec4i> v = sheet.findVerticalLines(processed);
-       cout << "Found " << lines.size() << " lines." <<
-               " and " << v.size() << " vertical lines." << endl;
-       cvtColor(processed, cdst, COLOR_GRAY2BGR);
-       for (const auto& l: lines) {
-         line(cdst, Point(l[0], l[1]), Point(l[2], l[3]),
-              Scalar(255, 0, 0), 1);
-       }
-       sheet.analyseLines(lines, v, cdst);
-       sheet.printSheetInfo();
-       imshow("Processed", cdst);
-       }
      break;
      default:
        cout << "unknown operation " << input << endl;

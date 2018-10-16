@@ -144,4 +144,8 @@ bool rectLeft(const cv::Rect& r1, const cv::Rect& r2) {
   return r1.tl().x < r2.tl().x;
 }
 
+bool rectTop(const cv::Rect& r1, const cv::Rect& r2) {
+  return r1.tl().y < r2.tl().y;
+}
+
 }  // end namespace musicocr

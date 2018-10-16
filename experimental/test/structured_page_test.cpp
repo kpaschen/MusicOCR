@@ -8,52 +8,45 @@
 
 void initVoiceMap(std::map<std::string, std::vector<int>>& m) {
   m.emplace("sample1.jpg",
-    std::vector<int>({1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
-  // 363 horizontal, 68 vertical lines
+    // std::vector<int>({1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
+    std::vector<int>({1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1}));
   m.emplace("DSC_0177.jpg",
-    std::vector<int>({4, 4, 4, 1}));
-  // 399 horizontal, 21 vertical lines
+    std::vector<int>({4, 4, 4}));
   m.emplace("DSC_0178.jpg",
-  // 200 horizontal, 4 vertical lines
     std::vector<int>({2, 3, 3, 1, 1, 1, 1}));
   m.emplace("DSC_0179.jpg",
-  // 397 horizontal, 39 vertical lines
-    std::vector<int>({1, 1, 1, 1, 1}));
+    std::vector<int>({1, 1, 1, 1}));
   m.emplace("DSC_0182.jpg",
-    std::vector<int>({1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
-
+    std::vector<int>({4, 1, 1, 1, 1, 1, 1, 1, 1}));
   m.emplace("DSC_0184.jpg",
-    // should be: std::vector<int>({1, 1, 2, 2, 2, 2, 2, 2, 1, 1}));
-    std::vector<int>({1, 1, 4, 2, 4, 1, 1}));
-  // 363 horizontal, 10 vertical lines
+    //should be: std::vector<int>({1, 2, 2, 2, 2, 2, 1}));
+    std::vector<int>({1, 4, 2, 1}));
   m.emplace("DSC_0186.jpg",
-    std::vector<int>({1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
-  // 223 horizontal, 49 vertical lines
+    //std::vector<int>({1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
+    std::vector<int>({3, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
   m.emplace("DSC_0130.jpg",
-    std::vector<int>({1, 1, 1, 1, 1, 1, 1}));
-  // 206 horizontal, 41 vertical lines
+    std::vector<int>({1, 1, 1, 1, 1, 1}));
   m.emplace("DSC_0131.jpg",
-    std::vector<int>({1, 1, 1, 1, 1}));
+    //std::vector<int>({1, 1, 1, 1, 1}));
+    std::vector<int>({1, 1, 1, 1, 1, 1}));
   m.emplace("DSC_0206.jpg",
     std::vector<int>({2, 2, 2, 1, 2}));
   m.emplace("DSC_0207.jpg",
    // should be: std::vector<int>({2, 2, 2, 2, 1, 1, 1, 1}));
-    std::vector<int>({1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
+    std::vector<int>({2, 1, 1, 2, 2, 1, 1, 1}));
   m.emplace("DSC_0208.jpg",
-    // should be: std::vector<int>({2, 2, 2, 2}));
-    std::vector<int>({2, 1, 1, 1, 1, 2}));
+    std::vector<int>({2, 2, 2, 2}));
   m.emplace("DSC_0209.jpg",
-    // should be: std::vector<int>({2, 2, 2, 2, 1, 1}));
-    std::vector<int>({1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
+    std::vector<int>({2, 2, 2, 2, 1, 1}));
   m.emplace("DSC_0212.jpg",
     // should be: std::vector<int>({2, 2, 1, 1}));
-    std::vector<int>({1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
+    std::vector<int>({2, 2, 1, 1, 1, 1, 1, 1, 1, 1}));
   m.emplace("DSC_0213.jpg",
     // std::vector<int>({2, 2, 2, 2}));
     std::vector<int>({1, 2, 2, 2, 1, 1, 1}));
-  m.emplace("DSC_0214.jpg",
+  //m.emplace("DSC_0214.jpg",
     // std::vector<int>({2, 2, 2, 2}));
-    std::vector<int>({1, 1, 2, 4, 2, 1}));
+  //  std::vector<int>({1, 1, 2, 4, 2, 1}));
 }
 
 TEST(StructuredPageTestSuite, TestVoiceGrouping) {
@@ -73,7 +66,8 @@ TEST(StructuredPageTestSuite, TestVoiceGrouping) {
     musicocr::Sheet sheet;
 
     cv::Mat clines = tmp.clone();
-    std::vector<cv::Vec4i> hlines = sheet.find_lines(clines);
+//    std::vector<cv::Vec4i> hlines = sheet.find_lines(clines);
+    std::vector<cv::Rect> hlines = sheet.find_lines_outlines(clines);
     std::vector<cv::Vec4i> vlines = sheet.findVerticalLines(clines);
     std::cout << it.first << ": " << hlines.size() << " horizontal and "
          << vlines.size() << " vertical lines." << std::endl;

@@ -10,25 +10,26 @@ namespace musicocr {
 using namespace std;
 using namespace cv;
 
-// Find horizontal lines
-vector<Vec4i> Sheet::find_lines(const Mat& processed) const {
+vector<cv::Rect> Sheet::find_lines_outlines(const Mat& processed) const {
   Mat tmp;
-  equalizeHist(processed, tmp);
   Mat horizontalStructure = getStructuringElement(MORPH_RECT,
       Size(processed.cols/30, 1));
-  dilate(tmp, tmp, horizontalStructure, Point(-1, -1));
+  dilate(processed, tmp, horizontalStructure, Point(-1, -1));
   erode(tmp, tmp, horizontalStructure, Point(-1, -1));
-  GaussianBlur(tmp, tmp, Size(config.gaussianKernel, config.gaussianKernel), 0, 0);
-  Canny(tmp, tmp, config.cannyMin, config.cannyMax, config.sobel,
-        config.l2Gradient);
-
-  vector<Vec4i> lines;
-  HoughLinesP(tmp, lines, 1, CV_PI/180.0, config.houghThreshold,
-              config.houghMinLineLength, config.houghMaxLineGap);
-  cout << "findLines: " << lines.size() << " found." << endl;
-  tmp.release();
-
-  return lines;
+  adaptiveThreshold(tmp, tmp, 255, ADAPTIVE_THRESH_GAUSSIAN_C,
+                    THRESH_BINARY, 15, -2);
+  GaussianBlur(tmp, tmp, Size(9, 9), 0, 0);
+  vector<vector<Point>> contours;
+  vector<Vec4i> hierarchy;
+  findContours(tmp, contours, hierarchy, RETR_TREE,
+        CHAIN_APPROX_SIMPLE, Point(0, 0));
+  vector<Rect> rectangles;
+  for (int i = 0; i < contours.size(); i++) {
+    vector<Point> hull;
+    convexHull(Mat(contours[i]), hull, false);
+    rectangles.emplace_back(boundingRect(Mat(hull)));
+  }
+  return rectangles;
 }
 
 vector<Vec4i> Sheet::findVerticalLines(const Mat& processed) const {
@@ -38,24 +39,13 @@ vector<Vec4i> Sheet::findVerticalLines(const Mat& processed) const {
   dilate(processed, tmp, horizontalStructure, Point(-1, -1));
   erode(tmp, tmp, horizontalStructure, Point(-1, -1));
   tmp = processed + ~tmp;
-/*
-  Mat verticalStructure = getStructuringElement(MORPH_RECT,
-     Size(1, processed.rows/30));
-  erode(tmp, tmp, verticalStructure, Point(-1, -1));
-  dilate(tmp, tmp, verticalStructure, Point(-1, -1));
-*/
-/*
-  GaussianBlur(tmp, tmp, Size(7, 7), 0, 0);
-  threshold(tmp, tmp, config.thresholdValue, 255, config.thresholdType);
-*/
 
-  Canny(tmp, tmp, config.cannyMin, config.cannyMax, config.sobel,
-        config.l2Gradient);
+  threshold(tmp, tmp, config.thresholdValue, 255, 12);
+  GaussianBlur(tmp, tmp, Size(3, 3), 0, 0);
 
   vector<Vec4i> lines;
   HoughLinesP(tmp, lines, 1, CV_PI/180.0, 100, 50, 15);
-  // HoughLinesP(tmp, lines, 1, CV_PI/180.0, 50, 23, 15);
-  cout << "findVerticalLines: " << lines.size() << " found." << endl;
+  // cout << "findVerticalLines: " << lines.size() << " found." << endl;
   tmp.release();
 
   return lines;
@@ -79,22 +69,45 @@ void Sheet::printSheetInfo() const {
       cout << "line group with " << v << " voices." << endl;
     }
   }
+  for (const auto& g : lineGroups) {
+    for (size_t i = 0; i < g->size(); i++) {
+      const SheetLine& v = g->getNthVoice(i);
+      cout << "v inner box: " << v.getInnerBox() 
+           << ": height " << v.getInnerBox().height
+           << ", width " << v.getInnerBox().width
+           << endl;
+    }
+  }
 }
 
-void Sheet::analyseLines(vector<Vec4i>& horizontal,
-     vector<Vec4i>& vertical, const Mat& clines) {
+void Sheet::analyseLines(const vector<Rect>& horizontalOutlines,
+                         const vector<Vec4i>& vertical,
+                         const Mat& clines) {
+  vector<Rect> horizontal;
+  for (const auto& r : horizontalOutlines) {
+    const int area = r.area();
+    // experimentally determined values. These work ok for A4
+    // paper with what I'd consider "standard" lining.
+    if (area < 20000 || area > 80000 || r.height < 40) {
+      // Skip this, it's most likely not a sheet line.
+      continue;
+    }
+    rectangle(clines, r, Scalar(0, 0, 255), 2);
+    horizontal.push_back(r);
+  }
+  std::sort(horizontal.begin(), horizontal.end(), musicocr::rectTop);
   vector<SheetLine> sheetLines;
-  std::sort(horizontal.begin(), horizontal.end(), moreTop);
-  SheetLine::collectSheetLines(horizontal, &sheetLines, clines);
+  for (const auto& h : horizontal) {
+    sheetLines.emplace_back(h, clines);
+  }
   std::pair<int, int> leftRight = overallLeftRight(sheetLines, clines.cols);
-  if (leftRight.first < 0) leftRight.first = 0;
   for (auto& sl : sheetLines) {
     sl.updateBoundingBox(leftRight, clines);
   }
-
   // Go over vertical lines, skipping those outside sheet margins.
   std::vector<cv::Vec4i> sortedVerticalLines;
   for (const auto& v : vertical) {
+    if (musicocr::lineIsHorizontal(v)) continue;
     if ((v[0] < leftRight.first && v[2] < leftRight.first) ||
         (v[0] > leftRight.second && v[2] > leftRight.second)) {
       continue;  // skip, it's outside the margins
@@ -102,10 +115,11 @@ void Sheet::analyseLines(vector<Vec4i>& horizontal,
     // could probably use std::set and moreLeft as the comparator
     // to avoid the extra sort.
     sortedVerticalLines.push_back(v);
+    // line(clines, Point(v[0], v[1]), Point(v[2], v[3]), Scalar(0, 255, 0), 1);
+
   }
   std::sort(sortedVerticalLines.begin(), sortedVerticalLines.end(),
             musicocr::moreLeft);
-
   initLineGroups(sortedVerticalLines, sheetLines, clines);
 }
 
@@ -141,8 +155,8 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
     std::vector<Vec4i> newCrossings;
     int intersectSize = 0;
     for (const auto& v : verticalLines) {
-      line(clines, Point(v[0], v[1]), Point(v[2], v[3]),
-           Scalar(0, 0, 255), 1);
+      //line(clines, Point(v[0], v[1]), Point(v[2], v[3]),
+      //     Scalar(0, 0, 255), 1);
       if (l.crossedBy(v)) {
         newCrossings.push_back(v);
         for (const auto& c : crossings) {
@@ -182,7 +196,7 @@ size_t Sheet::getLineCount() const {
  return s;
 }
 
-const SheetLine& Sheet::getNthLine(size_t i) const {
+SheetLine& Sheet::getNthLine(size_t i) const {
  size_t cur = 0;
  for (const auto& lg : lineGroups) {
    if (cur + lg->size() > i) {
@@ -228,33 +242,31 @@ pair<int, int> Sheet::overallLeftRight(const vector<SheetLine>& lines,
   }
   return pair<int, int>(
     std::max(0, fudge * maxLeft.first - fudge),
-    std::min(maxWidth, fudge * maxRight.first + fudge));;
+    std::min(maxWidth, fudge * maxRight.first + fudge));
 }
 
-SheetLine::SheetLine(const vector<Vec4i>& l, const Mat& wholePage) {
-  for (const auto x : l) {
-    lines.push_back(x);
-  }
-  Vec4i topLine = TopLine(lines); 
-  line(wholePage, Point(topLine[0], topLine[1]),
-                  Point(topLine[2], topLine[3]),
-                  Scalar(255, 255, 255), 5);
-
-  boundingBox = BoundingBox(lines, wholePage.rows, wholePage.cols);
-  rectangle(wholePage, boundingBox, Scalar(255, 255, 255), 5);
+SheetLine::SheetLine(const Rect& r, const Mat& page) {
+  innerBox = r;
+  boundingBox = BoundingBox(r, page.rows, page.cols);
+  cout << "setting inner box to " << innerBox << endl;
+  cout << " and outer box to " << boundingBox << endl;
+  rectangle(page, innerBox, Scalar(127, 0, 0), 1);
 }
 
 void SheetLine::updateBoundingBox(const pair<int, int>& newLeftRight, const Mat& wholePage) {
   const int bottom = boundingBox.br().y;
   const int top = boundingBox.tl().y;
-  boundingBox = Rect(Point(newLeftRight.first, top),
-                     Point(newLeftRight.second, bottom));
-  rectangle(wholePage, boundingBox, Scalar(255, 0, 0), 5);
+  // Don't cross the inner box.
+  const int left = std::min(newLeftRight.first, innerBox.tl().x);
+  const int right = std::max(newLeftRight.second, innerBox.br().x);
+  boundingBox = Rect(Point(left, top),
+                     Point(right, bottom));
+  rectangle(wholePage, boundingBox, Scalar(255, 255, 255), 1);
 }
 
 bool SheetLine::crossedBy(const cv::Vec4i& vertical) const {
- const Point topLeft = boundingBox.tl();
- const Point bottomRight = boundingBox.br();
+ const Point topLeft = innerBox.tl();
+ const Point bottomRight = innerBox.br();
 
  // Discard lines that are to the left or right of the bounding box.
  // This could be done one level above for speed if necessary.
@@ -269,120 +281,12 @@ bool SheetLine::crossedBy(const cv::Vec4i& vertical) const {
          && bottom >= (topLeft.y + verticalPaddingPx/2));
 }
 
-Vec4i SheetLine::TopLine(const vector<Vec4i>& l) {
-  // l is assumed to be ordered top to bottom.
-  Vec4i topLine = l[0];
-  const int topHeight = topLine[1];
-  const int leftEdge = topLine[0];
-  for (size_t i = 1; i < l.size(); i++) {
-    const Vec4i& curr = l[i];
-    // Is either edge of curr to the left of topLine[2] ?
-    if (curr[0] < topLine[2] || curr[2] < topLine[2]) {
-      break;
-    }
-    // Else, extend topLine
-    topLine[2] = curr[2];
-    topLine[3] = curr[3];
-  }
-  return topLine;
-}
-
-Rect SheetLine::BoundingBox(const vector<Vec4i>& l, int rows,
-                            int cols) {
-  // This is per-sheetline, might want to determine left/right
-  // boundaries at sheet level though. Top and Bottom are
-  // relatively straightforward.
-
-  // Make sure to snap these to the actual edges of the sheet if
-  // necessary.
-  const int top = std::max(0, l[0][1] - verticalPaddingPx);
-  const int bottom = std::min(rows, l.back()[1] + verticalPaddingPx);
-
-  // Keep track of the leftmost and rightmost three points.
-  // This is so we can discard outliers due to artifacts.
-  int left1 = -1, left2 = -1, left3 = -1;
-  int right1 = -1, right2 = -1, right3 = -1;
-  for (const auto& x : l) {
-    int l, r;
-    if (x[0] < x[2]) { 
-      l = x[0]; r = x[2];
-    } else {
-      l = x[2]; r = x[0];
-    }
-    if (left1 == -1) left1 = l;
-    else if (left2 == -1) left2 = l;
-    else if (left3 == -1) left3 = l;
-    else if (l < left1) left1 = l;
-    else if (l < left2) left2 = l;
-    else if (l < left3) left3 = l;
-
-    if (right1 == -1) right1 = r;
-    else if (right2 == -1) right2 = r;
-    else if (right3 == -1) right3 = r;
-    else if (r > right1) right1 = r;
-    else if (r > right2) right2 = r;
-    else if (r > right3) right3 = r;
-  }
-  int left = std::max(0, (left1 < left2 ? (left2 < left3 ? left3 : left2)
-                                : left1) - horizontalPaddingPx);
-  if (left < 0) left = 0;
-  int right = std::min(cols, (right1 > right2 ? (right2 > right3 ? right3
-                                    : right2) : right1) + horizontalPaddingPx);
-  if (right >= cols) right = cols = 1;
-   
+Rect SheetLine::BoundingBox(const Rect& r, int rows, int cols) {
+  const int top = std::max(0, r.tl().y - verticalPaddingPx);
+  const int bottom = std::min(rows, r.br().y + verticalPaddingPx);
+  const int left = std::max(0, r.tl().x - verticalPaddingPx);
+  const int right = std::min(cols, r.br().x + verticalPaddingPx);
   return Rect(Point(left, top), Point(right, bottom));
-}
-
-void SheetLine::collectSheetLines(const vector<Vec4i>& horizontalLines,
-                                  vector<SheetLine> *sheetLines,
-                                  const Mat& clines) {
-  // lastLineHeight is where the previous sheetline ended. Initialize
-  // to top of page.
-  int lastLineHeight = 0;
-  vector<Vec4i> currentGroup;
-  currentGroup.push_back(horizontalLines[0]);
-  const Scalar sheetLineColour(120, 0, 0);
-  const Scalar smallSheetLineColour(0, 120, 0);
-  const Scalar betweenLinesColour(0, 0, 120);
-  for (size_t i = 1; i < horizontalLines.size(); i++) {
-    const Vec4i curr = horizontalLines[i];
-    // gap == vertical distance between this line and the previous one.
-    const int gap = std::abs(curr[1] - currentGroup.back()[1]);
-    if (gap < 7) {
-      currentGroup.push_back(curr);
-      lastLineHeight = curr[1];
-       line(clines, Point(curr[0], curr[1]), Point(curr[2], curr[3]),
-            sheetLineColour, 2);
-      continue;
-    }
-    if (gap >= 20) {
-      // How high is the current sheet line?
-      const int height = currentGroup.back()[1] - currentGroup[0][1];
-      // cout << "Current height: " << height << endl;
-      if (height >= 20) {
-        // Finalize the current set
-        sheetLines->push_back(SheetLine(currentGroup, clines));
-        lastLineHeight = currentGroup.back()[1];
-        // Begin a new sheet line.
-        currentGroup.clear();
-        currentGroup.push_back(curr);
-        line(clines, Point(curr[0], curr[1]), Point(curr[2], curr[3]),
-             sheetLineColour, 1);
-      } else {
-        // cout << "Patchy sheet line?" << endl;
-        // Draw the line just below the patchy line. 
-        // we'll add this to the current group anyway.
-        currentGroup.push_back(curr);
-        line(clines, Point(curr[0], curr[1]), Point(curr[2], curr[3]),
-             smallSheetLineColour, 1);
-        continue;
-      }
-    }  // gap >= 7 and gap < 20
-    // cout << "Some stuff between lines? " << endl;
-    line(clines, Point(curr[0], curr[1]), Point(curr[2], curr[3]),
-         betweenLinesColour, 1);
-  }
-  sheetLines->push_back(SheetLine(currentGroup, clines));
 }
 
 }  // namespace musicocr

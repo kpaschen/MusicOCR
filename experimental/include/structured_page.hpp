@@ -30,8 +30,8 @@ class Sheet {
    Sheet(const SheetConfig& c) : config(c) {}
    Sheet() {}
 
-   // This finds the horizontal lines.
-   std::vector<cv::Vec4i> find_lines(const cv::Mat& warped) const;
+   // This finds contours of lines.
+   std::vector<cv::Rect> find_lines_outlines(const cv::Mat&) const;
 
    std::vector<cv::Vec4i> findVerticalLines(const cv::Mat&) const;
 
@@ -51,10 +51,10 @@ class Sheet {
    const LineGroup& getNthLineGroup(size_t i) const {
      return *lineGroups[i];
    }
-   const SheetLine& getNthLine(size_t i) const;
+   SheetLine& getNthLine(size_t i) const;
 
-   void analyseLines(std::vector<cv::Vec4i>&,
-                     std::vector<cv::Vec4i>&, const cv::Mat&);
+   void analyseLines(const std::vector<cv::Rect>&,
+                     const std::vector<cv::Vec4i>&, const cv::Mat&);
    void printSheetInfo() const; 
    std::vector<int> getSheetInfo() const;
 
@@ -76,7 +76,7 @@ class LineGroup {
      lines.emplace_back(line);
    }
 
-   const SheetLine& getNthVoice(size_t i) const { return lines[i]; }
+   SheetLine& getNthVoice(size_t i) { return lines[i]; }
 
  private:
    std::vector<SheetLine> lines;
@@ -84,7 +84,7 @@ class LineGroup {
 
 class SheetLine {
  public:
-   SheetLine(const std::vector<cv::Vec4i>&, const cv::Mat&);
+   SheetLine(const cv::Rect&, const cv::Mat&);
    bool crossedBy(const cv::Vec4i&) const;
 
    int getLeftEdge() const { return boundingBox.tl().x; }
@@ -92,22 +92,16 @@ class SheetLine {
    void updateBoundingBox(const std::pair<int, int>&, const cv::Mat&);
 
    const cv::Rect& getBoundingBox() const { return boundingBox; }
+   const cv::Rect& getInnerBox() const { return innerBox; }
 
    static const int verticalPaddingPx = 20;
    static const int horizontalPaddingPx = 10;
 
-   static void collectSheetLines(const std::vector<cv::Vec4i>&,
-                                 std::vector<SheetLine>*,
-                                 const cv::Mat&);
-
  private:
-   static cv::Vec4i TopLine(const std::vector<cv::Vec4i>&);
-   static cv::Rect BoundingBox(const std::vector<cv::Vec4i>&,
+   static cv::Rect BoundingBox(const cv::Rect&,
                                int rows, int cols);
 
-   // Lines found by houghp.
-   std::vector<cv::Vec4i> lines;
-   cv::Rect boundingBox;
+   cv::Rect boundingBox, innerBox;
 };
 
 
