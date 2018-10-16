@@ -1,6 +1,7 @@
 #include <opencv2/ml.hpp>
 
 #include "training_fileutils.hpp"
+#include "training_key.hpp"
 
 using std::cout;
 using std::cerr;
@@ -32,7 +33,8 @@ int main(int argc, char** argv) {
 
   musicocr::SampleData collector;
   musicocr::SampleDataFiles files;
-  files.readFiles(directory, datasetname, filenamepattern, collector);
+  files.readFiles(directory, filenamepattern, musicocr::TrainingKey::statmodel);
+  files.initCollector(directory, collector);
 
   cout << "read files, now starting training." << endl;
 

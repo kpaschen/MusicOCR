@@ -14,9 +14,6 @@ add_library(musicocr SHARED ${musicocr_source})
 target_include_directories(musicocr PUBLIC ${OpenCV_INCLUDE_DIRS} include)
 target_link_libraries(musicocr ${OpenCV_LIBS})
 
-add_executable(DisplayImage display_image.cpp)
-target_link_libraries(DisplayImage musicocr)
-
 add_executable(OcrShell ocr_shell.cpp)
 target_link_libraries(OcrShell musicocr)
 
@@ -25,6 +22,9 @@ target_link_libraries(TrainKnn musicocr)
 
 add_executable(TestKnn test_knn.cpp)
 target_link_libraries(TestKnn musicocr)
+
+add_executable(DumpData dump_data_list.cpp)
+target_link_libraries(DumpData musicocr)
 
 find_package(GTest REQUIRED)
 enable_testing()

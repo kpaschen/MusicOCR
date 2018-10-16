@@ -8,9 +8,14 @@ namespace musicocr {
 
 class TrainingKey {
 public:
+  enum KeyMode {
+    basic, statmodel
+  };
+
   TrainingKey();
 
   const std::string& getCategoryName(int basicCategory) const;
+  int getCategory(int basicCategory, KeyMode mode) const;
   int getCategoryForStatModel(int basicCategory) const;
 
 private:

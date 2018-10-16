@@ -47,15 +47,13 @@ int SampleDataFiles::parseModelFileName(const string& model,
 
 
 void SampleDataFiles::readFiles(const string& dirname,
-                                const string& datasetname,
-                                SampleData& collector) {
-  readFiles(dirname, datasetname, "", collector);
+                                TrainingKey::KeyMode mode) {
+  readFiles(dirname, "", mode);
 }
 
 void SampleDataFiles::readFiles(const string& dirname,
-                                const string& dataset,
                                 const string& filenames,
-                                SampleData& collector) {
+                                TrainingKey::KeyMode mode) {
   DIR* dirp = opendir(dirname.c_str());
   struct dirent *dp;
   char trainingset[50];
@@ -85,7 +83,7 @@ void SampleDataFiles::readFiles(const string& dirname,
           cerr << "Bad response line: " << l << ", skipping." << endl;
           continue;
         }
-        resp.push_back(key.getCategoryForStatModel(cat));
+        resp.push_back(key.getCategory(cat, mode));
       }
       if (responses.find(trainingset) == responses.end()) {
         responses.emplace(trainingset, map<int, vector<int>>());
@@ -109,10 +107,47 @@ void SampleDataFiles::readFiles(const string& dirname,
       coords.emplace(idx, std::make_pair(xcoord, ycoord));
     }
   }
+}
+
+void SampleDataFiles::dumpData(std::ostream& out,
+                               const std::string& directory) const {
+  out << "Label,size,tl.x,tl.y,width,height,filename" << endl;
+  for (const auto& sample : datasets) {
+    const string& name = sample.first;
+    const map<int, map<int, std::pair<int, int>>>& tset
+         = sample.second;
+    const map<int, vector<int>>& lineresponses
+         = responses.find(name)->second;
+    char rfilename[directory.size() + name.size() + 20];
+    for (const auto& tset_iter : tset) {
+      // i is the line index, l is the number of samples for that line.
+      const int i = tset_iter.first;
+      const int l = tset_iter.second.size();
+      const vector<int>& linelabels = lineresponses.find(i)->second;
+      for (size_t j = 0; j < l; j++) {
+        const std::pair<int, int>& coords
+            = tset_iter.second.find(j)->second;
+        sprintf(rfilename, "%s/%s.%d.%d.%d.%d.png", directory.c_str(),
+                name.c_str(), i, j, coords.first, coords.second);
+        const cv::Mat smat = cv::imread(rfilename, 0);
+        const int width = smat.cols;
+        const int height = smat.rows;
+        out << linelabels[j] << "," << (width * height) << ","
+            << coords.first  << "," << coords.second  << ","
+            << width         << "," << height << ","
+            << rfilename << std::endl;
+      }
+    }
+  }
+}
+
+
+void SampleDataFiles::initCollector(const string& dirname,
+                                    SampleData& collector) const {
   for (const auto& sample : datasets) {
     const string& name = sample.first;
     const map<int, map<int, std::pair<int, int>>>& tset = sample.second;
-    const map<int, vector<int>>& lineresponses = responses[name];
+    const map<int, vector<int>>& lineresponses = responses.find(name)->second;
     char rfilename[dirname.size() + name.size() + 20];
     for (const auto& tset_iter : tset) {
       // i is the line index, l is the number of samples for that line.
@@ -137,7 +172,8 @@ void SampleDataFiles::readFiles(const string& dirname,
         cv::Mat smat = cv::imread(rfilename, 0);
 
         // Add smat and linelabels[j] to data collector
-        collector.addTrainingData(smat, linelabels[j], xcoord, ycoord);
+        collector.addTrainingData(smat, linelabels[j],
+                                  coords.first, coords.second);
       }
     }
   }

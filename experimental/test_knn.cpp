@@ -1,6 +1,7 @@
 #include <opencv2/ml.hpp>
 
 #include "training_fileutils.hpp"
+#include "training_key.hpp"
 
 int main(int argc, char** argv) {
   if (argc < 2) {
@@ -24,7 +25,8 @@ int main(int argc, char** argv) {
 
   musicocr::SampleData collector;
   musicocr::SampleDataFiles files;
-  files.readFiles(directory, datasetname, fnamePattern, collector);
+  files.readFiles(directory, fnamePattern, musicocr::TrainingKey::statmodel);
+  files.initCollector(directory, collector);
 
   {
   cv::Ptr<cv::ml::KNearest> knn =

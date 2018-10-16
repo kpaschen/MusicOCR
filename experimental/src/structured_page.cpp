@@ -86,7 +86,8 @@ void Sheet::analyseLines(vector<Vec4i>& horizontal,
   vector<SheetLine> sheetLines;
   std::sort(horizontal.begin(), horizontal.end(), moreTop);
   SheetLine::collectSheetLines(horizontal, &sheetLines, clines);
-  std::pair<int, int> leftRight = overallLeftRight(sheetLines);
+  std::pair<int, int> leftRight = overallLeftRight(sheetLines, clines.cols);
+  if (leftRight.first < 0) leftRight.first = 0;
   for (auto& sl : sheetLines) {
     sl.updateBoundingBox(leftRight, clines);
   }
@@ -193,7 +194,8 @@ const SheetLine& Sheet::getNthLine(size_t i) const {
 }
 
 
-pair<int, int> Sheet::overallLeftRight(const vector<SheetLine>& lines) {
+pair<int, int> Sheet::overallLeftRight(const vector<SheetLine>& lines,
+                                       int maxWidth) {
   // histograms of left and right borders
   unordered_map<int, int> leftBorders;
   unordered_map<int, int> rightBorders;
@@ -224,7 +226,9 @@ pair<int, int> Sheet::overallLeftRight(const vector<SheetLine>& lines) {
       maxRight = right;
     }
   }
-  return pair<int, int>(fudge * maxLeft.first - fudge, fudge * maxRight.first + fudge);
+  return pair<int, int>(
+    std::max(0, fudge * maxLeft.first - fudge),
+    std::min(maxWidth, fudge * maxRight.first + fudge));;
 }
 
 SheetLine::SheetLine(const vector<Vec4i>& l, const Mat& wholePage) {
@@ -319,10 +323,12 @@ Rect SheetLine::BoundingBox(const vector<Vec4i>& l, int rows,
     else if (r > right2) right2 = r;
     else if (r > right3) right3 = r;
   }
-  const int left = std::max(0, (left1 < left2 ? (left2 < left3 ? left3 : left2)
+  int left = std::max(0, (left1 < left2 ? (left2 < left3 ? left3 : left2)
                                 : left1) - horizontalPaddingPx);
-  const int right = std::min(cols, (right1 > right2 ? (right2 > right3 ? right3
+  if (left < 0) left = 0;
+  int right = std::min(cols, (right1 > right2 ? (right2 > right3 ? right3
                                     : right2) : right1) + horizontalPaddingPx);
+  if (right >= cols) right = cols = 1;
    
   return Rect(Point(left, top), Point(right, bottom));
 }

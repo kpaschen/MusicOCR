@@ -315,6 +315,11 @@ void navigateSheet() {
   int lineIndex = 0;
   int input;
   const musicocr::SheetLine& currentLine = sheet.getNthLine(lineIndex);
+
+  cout << "currentLine has bounding box " << currentLine.getBoundingBox()
+       << endl;
+  cout << "focused has dimensions " << focused.size() << endl;
+  
   processed = focused(currentLine.getBoundingBox());
   imshow("Processed", processed);
 

@@ -57,20 +57,32 @@ namespace musicocr {
     trainingKeyForStatModels.emplace(108, 108); // vertical line
   }
 
-  const std::string& TrainingKey::getCategoryName(int basicCategory) const {
-    const auto& cat = trainingKey.find(basicCategory);
-    if (cat == trainingKey.end()) {
-      return unknown_category;
-    }
-    return cat->second;
+const std::string& TrainingKey::getCategoryName(int basicCategory) const {
+  const auto& cat = trainingKey.find(basicCategory);
+  if (cat == trainingKey.end()) {
+    return unknown_category;
   }
+  return cat->second;
+}
 
-  int TrainingKey::getCategoryForStatModel(int basicCategory) const {
-    const auto& cat = trainingKeyForStatModels.find(basicCategory);
-    if (cat == trainingKeyForStatModels.end()) {
-      return -1;
-    }
-    return cat->second;
+int TrainingKey::getCategoryForStatModel(int basicCategory) const {
+  const auto& cat = trainingKeyForStatModels.find(basicCategory);
+  if (cat == trainingKeyForStatModels.end()) {
+    return -1;
   }
+  return cat->second;
+}
+
+int TrainingKey::getCategory(int basicCategory, KeyMode mode) const {
+  switch(mode) {
+    case basic: return basicCategory;
+        break;
+    case statmodel: return getCategoryForStatModel(basicCategory);
+        break;
+    default:
+        return basicCategory;
+        break;
+  }
+}
 
 }  // namespace musicocr

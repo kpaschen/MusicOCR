@@ -30,15 +30,18 @@ class SampleDataFiles {
                                   char* trainingset,
                                   char* modeltype);
 
-    // All files in dirname.
-    void readFiles(const std::string& dirname, const std::string& dset, 
-                   SampleData&);
+    // Initialize datasets and responses from files in dirname.
+    void readFiles(const std::string& dirname, TrainingKey::KeyMode);
 
-    // Only one dataset.
-    void readFiles(const std::string& dirname, const std::string& dataset,
-                   const std::string& fname, SampleData&);
+    // Only use files whose basename is fname.
+    void readFiles(const std::string& dirname,
+                   const std::string& fname, TrainingKey::KeyMode);
 
-  private:
+    void initCollector(const std::string& dirname, musicocr::SampleData& collector) const;
+
+
+    void dumpData(std::ostream& output, const std::string& dir) const;
+
     // dataset name -> [line number -> list of x,y coords]
     std::map<std::string, std::map<int,
              std::map<int, std::pair<int, int>>>> datasets;

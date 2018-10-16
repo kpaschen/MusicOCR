@@ -37,7 +37,7 @@ class Sheet {
 
    // Determine general left/right margins.
    static std::pair<int, int> overallLeftRight(
-     const std::vector<SheetLine>&);
+     const std::vector<SheetLine>&, int maxWidth);
 
    void addLineGroup(LineGroup* group) {
      lineGroups.push_back(std::unique_ptr<LineGroup>(group));

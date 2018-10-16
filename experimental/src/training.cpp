@@ -163,4 +163,5 @@ int SampleData::runClassifier(cv::Ptr<cv::ml::KNearest> knn,
   }
   return (int)((float)sameLabel * 100.0 / labels.rows);
 }
+
 }  // namespace musicocr
