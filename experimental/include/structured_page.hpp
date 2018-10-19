@@ -60,8 +60,7 @@ class Sheet {
 
  private:
    void initLineGroups(const std::vector<cv::Vec4i>& verticalLines,
-                       const std::vector<SheetLine>& sheetLines,
-                       const cv::Mat& clines);
+                       const std::vector<SheetLine>& sheetLines);
 
    Sheet(const Sheet&) = delete;
    std::vector<std::unique_ptr<LineGroup>> lineGroups;
@@ -84,24 +83,58 @@ class LineGroup {
 
 class SheetLine {
  public:
+
+   // Initialize a sheet line. Rect is the inner
+   // bounding box, coordinates relative to Mat.
+   // Mat is a greyscale, corner-adjusted page.
+   // SheetLine will initialize its local viewport
+   // to Rect(Mat).
    SheetLine(const cv::Rect&, const cv::Mat&);
    bool crossedBy(const cv::Vec4i&) const;
 
    int getLeftEdge() const { return boundingBox.tl().x; }
    int getRightEdge() const { return boundingBox.br().x; }
-   void updateBoundingBox(const std::pair<int, int>&, const cv::Mat&);
 
    const cv::Rect& getBoundingBox() const { return boundingBox; }
    const cv::Rect& getInnerBox() const { return innerBox; }
 
-   static const int verticalPaddingPx = 20;
-   static const int horizontalPaddingPx = 10;
+   // Transform a clone of viewport and obtain horizontal lines.
+   std::vector<cv::Vec4i> obtainGridlines() const;
+
+   // Limit /lines/ to those inside the inner box. Attempt
+   // to join pieces of the same horizontal line.
+   // Will return early and set realMusicLine to false if too few
+   // horizontal lines are found.
+   void accumulateHorizontalLines(const std::vector<cv::Vec4i>& lines);
+
+   float getSlope() const;
+
+   bool isRealMusicLine() const { return realMusicLine; }
+
+   // How much has this been rotated relative to the whole page.
+   float getRotationSlope() const { return rotationSlope; }
+   void rotateViewPort(float angle);
+
+   void coordinates(cv::Mat& show) const;
+
+   const cv::Mat& getViewPort() const { return viewPort; }
 
  private:
-   static cv::Rect BoundingBox(const cv::Rect&,
-                               int rows, int cols);
+   static const int verticalPaddingPx = 20;
+   static const int horizontalPaddingPx = 10;
+   static const int minHorizontalLines = 4;
 
+   static cv::Rect BoundingBox(const cv::Rect&, int rows, int cols);
+
+   cv::Mat viewPort;
    cv::Rect boundingBox, innerBox;
+   std::vector<cv::Vec4i> horizontalLines;
+
+   float rotationSlope = 0.0;
+
+   // flip this to false when it turns out this line doesn't contain
+   // music notes.
+   bool realMusicLine = true;
 };
 
 

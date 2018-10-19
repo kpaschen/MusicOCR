@@ -77,37 +77,6 @@ void correctConfig() {
   }
 }
 
-void makeConfig(musicocr::CornerConfig *config) {
-  correctConfig();
-  config->gaussianKernel = gaussianKernel;
-  config->thresholdValue = (double)thresholdValue/255.0;
-  config->thresholdType = thresholdType + (useOtsu ? THRESH_OTSU : 0);
-  config->cannyMin = cannyMin;
-  config->cannyMax = cannyMax;
-  config->sobelKernel = sobelKernel;
-  config->l2gradient = (l2gradient != 0);
-  config->houghResolution = houghResolution;
-  config->houghResolutionRad = (double)houghResolutionRad * CV_PI / 180.0;
-  if (config->houghResolutionRad < 1.0) { config->houghResolutionRad = 1.0; }
-  config->houghThreshold = houghThreshold;
-  config->houghMinLinLength = houghMinLinLength;
-  config->houghMaxLineGap = houghMaxLineGap;
-}
-
-void makeSheetConfig(musicocr::SheetConfig *config) {
-  correctConfig();
-  config->gaussianKernel = gaussianKernel;
-  config->thresholdValue = (double)thresholdValue/255.0;
-  config->thresholdType = thresholdType + (useOtsu ? THRESH_OTSU : 0);
-  config->cannyMin = cannyMin;
-  config->cannyMax = cannyMax;
-  config->sobel = sobelKernel;
-  config->l2Gradient = (l2gradient != 0);
-  config->houghThreshold = houghThreshold;
-  config->houghMinLineLength = houghMinLinLength;
-  config->houghMaxLineGap = houghMaxLineGap;
-}
-
 void makeContourConfig(musicocr::ContourConfig *config) {
   correctConfig();
   config->gaussianKernel = gaussianKernel;
@@ -253,7 +222,6 @@ int main(int argc, char** argv) {
          << endl << "'g': find grid. "
          << endl << "'n': start navigating line by line."
          << endl << "'p': enter processing loop."
-         << endl << "'x': rotate image."
          << endl;
     input = waitKeyEx(0);
     switch(input) {
@@ -272,11 +240,6 @@ int main(int argc, char** argv) {
         break;
       case 'p':
         processImage();
-        break;
-      case 'x':
-        cv::rotate(processed, processed, cv::ROTATE_90_COUNTERCLOCKWISE);
-        cv::rotate(focused, focused, cv::ROTATE_90_COUNTERCLOCKWISE);
-        imshow("Processed", processed);
         break;
       case 'q':
         cout << "Bye." << endl;
@@ -298,11 +261,30 @@ void findCorners() {
 }
 
 void findLines() {
-  cvtColor(processed, cdst, COLOR_GRAY2BGR);
-  vector<Rect> lineContours = sheet.find_lines_outlines(processed);
+  vector<Rect> lineContours = sheet.find_lines_outlines(focused);
+
+  // create sheet lines for the appropriate line contours
+  // xxx: have Sheet remember which sheet line starts at which global
+  //      coordinates.
+  // vector<sheetline> vl = sheet.setupSheetLines(focused, lineContours);
+  // for each sheetline:
+  //   find hlines; rotate if necessary
+  // compare hline heights and positions across sheetlines
+
   // It might be better to do this during contour finding.
-  vector<Vec4i> verticalLines = sheet.findVerticalLines(processed);
-  sheet.analyseLines(lineContours, verticalLines, cdst);
+  vector<Vec4i> verticalLines = sheet.findVerticalLines(focused);
+  sheet.analyseLines(lineContours, verticalLines, focused);
+  cvtColor(focused, cdst, COLOR_GRAY2BGR);
+ 
+  for (const auto& r : lineContours) {
+    rectangle(cdst, r, Scalar(255, 0, 0), 1);
+  }
+
+  for (const auto& v : verticalLines) {
+    line(cdst, Point(v[0], v[1]), Point(v[2], v[3]),
+         Scalar(0, 255, 0), 1);
+  }
+
   sheet.printSheetInfo();
   imshow("Processed", cdst);
 }
@@ -314,9 +296,9 @@ void navigateSheet() {
   }
   int lineIndex = 0;
   int input;
-  musicocr::SheetLine currentLine = sheet.getNthLine(lineIndex);
-
-  processed = focused(currentLine.getBoundingBox());
+  
+  focused = sheet.getNthLine(lineIndex).getViewPort().clone();
+  focused.copyTo(processed);
   imshow("Processed", processed);
 
   musicocr::ContourConfig config;
@@ -330,14 +312,16 @@ void navigateSheet() {
     cout << "Per-line menu. Cursor keys to navigate, 'p' to fiddle, "
          << "'t' to train, 'd' to run a model or 'q' to quit. "
          << "'d' needs a model loaded." << endl;
+    cout << "Current Line is " << (sheet.getNthLine(lineIndex).isRealMusicLine() ? "" : "not ")
+         << "a real music line." << endl;
     input = waitKeyEx(0);
     switch(input) {
       case 65364: // cursor down
         {
         lineIndex++;
         if (lineIndex >= sheetSize) lineIndex -= sheetSize; 
-        currentLine = sheet.getNthLine(lineIndex);
-        processed = focused(currentLine.getBoundingBox());
+        focused = sheet.getNthLine(lineIndex).getViewPort().clone();
+        focused.copyTo(processed);
         imshow("Processed", processed);
         }
         break;
@@ -345,8 +329,8 @@ void navigateSheet() {
         {
         lineIndex--;
         if (lineIndex < 0) lineIndex += sheetSize;
-        currentLine = sheet.getNthLine(lineIndex);
-        processed = focused(currentLine.getBoundingBox());
+        focused = sheet.getNthLine(lineIndex).getViewPort().clone();
+        focused.copyTo(processed);
         imshow("Processed", processed);
         }
         break;
@@ -406,110 +390,27 @@ void navigateSheet() {
           }
         }
         break;
-      case 'z':  // coordinate system
+      case 'c':  // coordinates
       {
-          Mat tmp = processed.clone();
-          const Rect& ib = currentLine.getInnerBox();
-          const Rect relative = ib - currentLine.getBoundingBox().tl();
-               
-          cvtColor(tmp, cdst, COLOR_GRAY2BGR);
-
-          const int edHorizontalWidth = tmp.cols / edHorizontalSizeFudge;
-          Mat horizontalStructure = getStructuringElement(MORPH_RECT,
-            Size(edHorizontalWidth, edHorizontalHeight));
-          dilate(tmp, tmp, horizontalStructure, Point(-1, -1));
-          erode(tmp, tmp, horizontalStructure, Point(-1, -1));
-
-          GaussianBlur(tmp, tmp, Size(3, 3), 0, 0);
-
-          threshold(tmp, tmp, (float)thresholdValue/255.0, 255,
-            (thresholdType + (useOtsu ? THRESH_OTSU : 0)));
-
-          // Without canny, you get a lot of noise in the lines.
-          Canny(tmp, tmp, cannyMin, cannyMax, sobelKernel, (l2gradient > 0));
-          vector<Vec4i> lines;
-          HoughLinesP(tmp, lines, 1, 2.0 * CV_PI/180.0, 70, 23, 32);
-          std::sort(lines.begin(), lines.end(), musicocr::moreRight);
-          std::sort(lines.begin(), lines.end(), musicocr::moreTop);
-          vector<Vec4i> horizontals;
-          const Scalar colour1(0, 0, 255);
-          const Scalar colour2(255, 0, 0);
-          Scalar currentColour = colour1;
-          cvtColor(tmp, cdst, COLOR_GRAY2BGR);
-          for (size_t i = 0; i < lines.size(); i++) {
-            const auto& l = lines[i];
-            // Skip lines that are outside the inner box.
-            if (!relative.contains(Point(l[0], l[1])) ||
-                !relative.contains(Point(l[2], l[3]))) {
-              continue;
-            }
-            int currentHeight = l[1];
-            Point lp(l[0], l[1]); Point rp(l[2], l[3]);
-            int top = std::min(l[1], l[3]), bottom = std::max(l[1], l[3]);
-            for (size_t j = i+1; j < lines.size(); j++) {
-              const auto& k = lines[j];
-              if (k[1] - bottom <= 2) {
-                if (k[2] <= lp.x || k[0] >= rp.x) {
-                  if (k[2] <= lp.x) {
-                    lp = Point(k[0], k[1]);
-                  }
-                  if (k[0] >= rp.x) {
-                    rp = Point(k[2], k[3]);
-                  }
-                  top = std::min(top, std::min(k[1], k[3]));
-                  bottom = std::max(bottom, std::max(k[1], k[3]));
-                } else {
-                  i = j + 1;
-                  break;
-                }
-              } else {
-                  i = j + 1;
-                  break;
-              }
-            }
-            horizontals.emplace_back(Vec4i(lp.x, lp.y, rp.x, rp.y));
-            line(cdst, lp, rp, currentColour, 1);
-            if (currentColour == colour1) currentColour = colour2;
-            else currentColour = colour1;
-          }
-          vector<Vec4i> gridLinesH;
-          int lastHeight = 0;
-          int bestLeft = 500, bestRight = 0;
-          for (size_t i = 0; i < horizontals.size(); i++) {
-            const auto& candidate = horizontals[i];
-            float slope = (float)(candidate[1]-candidate[3])/std::abs(candidate[0] - candidate[2]);
-            cout << "line with xwdith " << (candidate[2] - candidate[0])
-                 << " and  slope " << slope << endl;
-            if (!gridLinesH.empty() && candidate[1] - lastHeight >= 12
-                && lastHeight < 50) {
-              cout << "resetting at height " << lastHeight << endl;
-              bestLeft = 500, bestRight = 0;
-              gridLinesH.clear();
-            }
-            gridLinesH.push_back(candidate);
-            lastHeight = candidate[1];
-            if (candidate[0] < bestLeft) bestLeft = candidate[0];
-            if (candidate[2] > bestRight) bestRight = candidate[2];
-          }
-          if (!gridLinesH.size()) {
-            cout << "no gridlines found!" << endl;
-          } else {
-          cout << "got " << gridLinesH.size() << " horizontal lines"
-               << " and total height "
-               << gridLinesH[0][1] << " to " << gridLinesH.back()[1]
-               << endl;
-          if (gridLinesH.size() > 5 && 
-              std::abs(gridLinesH[0][1] - gridLinesH.back()[1]) > 25) {
-            rectangle(cdst, Point(bestLeft, gridLinesH[0][1]),
-                      Point(bestRight, gridLinesH.back()[3]),
-                      Scalar(255, 255, 255), 1);
-            imshow("What is this?", cdst);
-          } else {
-            cout << "This is not a line with notes" << endl;
-          }
-          }
+        musicocr::SheetLine& sheetLine = sheet.getNthLine(lineIndex);
+        // This does x,y,b,t,c,l
+        vector<Vec4i> lines = sheetLine.obtainGridlines();
+        sheetLine.accumulateHorizontalLines(lines);
+        const float slope = sheetLine.getSlope();
+        if (std::abs(slope) >= 0.025) {
+          cout << "rotate by " << (std::abs(slope) * 45.0)
+               << " degrees " << (slope < 0 ? "counterclockwise"
+                  : "clockwise") << endl;
+          sheetLine.rotateViewPort(slope);
+          cout << "line finding post-rotation" << endl;
+          vector<Vec4i> lines = sheetLine.obtainGridlines();
+          sheetLine.accumulateHorizontalLines(lines);
+        }
+        cvtColor(processed, cdst, COLOR_GRAY2BGR);
+        sheetLine.coordinates(cdst);
+        imshow("What is this?", cdst);
       }
-        break;
+      break;
       case 'q': 
         quit = true;
         break;
@@ -521,13 +422,11 @@ void navigateSheet() {
 
 void processImage() {
   Mat tmp;
-  Mat last;
   int input;
   while (true) {
     cout << "processing image, select operation." << endl;
     input = waitKeyEx(0);
     if (input == 'q') break;
-    last = processed.clone();
     correctConfig();
     switch(input) {
     case 'a' : // adaptive threshold
@@ -593,7 +492,6 @@ void processImage() {
     }
     break;
     case 'x': // dilate horizontally
-    // (x,y,t,s,b,f)
     {
       tmp = processed.clone();
       const int edHorizontalWidth = tmp.cols / edHorizontalSizeFudge;
@@ -622,10 +520,6 @@ void processImage() {
     }
     break;
     case 'f': // f, find contours
-    // first: x, y, s. then t, b (gaussian 3 or more).
-    // gaussian kernel 7 the bounding boxes contain too much
-    // but might be good for text. 5 is also not so good.
-    // 3 has ok segmentation.
     {
       vector<vector<Point>> contours;
       vector<Vec4i> hierarchy;
@@ -687,15 +581,11 @@ void processImage() {
      break;
      case 'r': // reset
        cout << "reset to previous state" << endl;
-       processed = last;
+       focused.copyTo(processed);
        imshow("Processed", processed);
        break;
      case 's': // processed := focused - proceessed
        cout << "subtract" << endl;
-       cout << "currently focused has type " << focused.type()
-            << " and size " << focused.size() << endl;
-       cout << "processed: " << processed.type() << ", "
-            << processed.size() << endl;
        processed = focused + ~processed;
        imshow("Processed", processed);
      break;
