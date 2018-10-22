@@ -8,6 +8,7 @@
 
 void initVoiceMap(std::map<std::string, std::vector<int>>& m) {
   m.emplace("sample1.jpg",
+    // Should be: all single lines.
     // std::vector<int>({1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
     std::vector<int>({1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1}));
   m.emplace("DSC_0177.jpg",
@@ -65,16 +66,18 @@ TEST(StructuredPageTestSuite, TestVoiceGrouping) {
     cornerFinder.adjust(gray, tmp);
     musicocr::Sheet sheet;
 
-    cv::Mat clines = tmp.clone();
-//    std::vector<cv::Vec4i> hlines = sheet.find_lines(clines);
-    std::vector<cv::Rect> hlines = sheet.find_lines_outlines(clines);
-    std::vector<cv::Vec4i> vlines = sheet.findVerticalLines(clines);
+    std::vector<cv::Rect> hlines = sheet.find_lines_outlines(tmp);
+    std::vector<cv::Vec4i> vlines = sheet.findVerticalLines(tmp);
     std::cout << it.first << ": " << hlines.size() << " horizontal and "
          << vlines.size() << " vertical lines." << std::endl;
     
     sheet.analyseLines(hlines, vlines, tmp);
-    std::vector<int> voices = sheet.getSheetInfo();
+    // Each vector element is one line group.
+    // Each line group is a vector of sheet line indices.
+    std::vector<std::vector<int>> voices = sheet.getSheetInfo();
     sheet.printSheetInfo();
+    // TODO: this only verifies the number of line groups found,
+    // it should also look at the sheet line indices within each group.
     EXPECT_EQ(voices.size(), it.second.size()) << it.first
               << ": wrong number of voices." << std::endl;
   }

@@ -51,10 +51,10 @@ vector<Vec4i> Sheet::findVerticalLines(const Mat& processed) const {
   return lines;
 }
 
-vector<int> Sheet::getSheetInfo() const {
-  vector<int> ret;
+vector<vector<int>> Sheet::getSheetInfo() const {
+  vector<vector<int>> ret;
   for (const auto& g : lineGroups) {
-    ret.push_back(g->size());
+    ret.push_back(g->lines);
   }
   return ret;
 }
@@ -64,27 +64,26 @@ void Sheet::printSheetInfo() const {
   if (config.voices > 0) {
     cout << "set number of voices: " << config.voices << endl;
   } else {
-    vector<int> voices = getSheetInfo();
-    for (int v : voices) {
-      cout << "line group with " << v << " voices." << endl;
+    vector<vector<int>> voices = getSheetInfo();
+    for (vector<int> v : voices) {
+      cout << "line group with " << v.size() << " voices:";
+      for (int i : v) {
+        cout << i << ", ";
+      }
+      cout << endl;
     }
   }
-  for (const auto& g : lineGroups) {
-    for (size_t i = 0; i < g->size(); i++) {
-      const SheetLine& v = g->getNthVoice(i);
-      cout << "v inner box: " << v.getInnerBox() 
-           << ": height " << v.getInnerBox().height
-           << ", width " << v.getInnerBox().width
-           << endl;
-    }
+  for (const auto& l : sheetLines) {
+    cout << "inner box: " << l.getInnerBox() 
+         << ": height " << l.getInnerBox().height
+         << ", width " << l.getInnerBox().width
+         << endl;
   }
 }
 
-void Sheet::analyseLines(const vector<Rect>& horizontalOutlines,
-                         const vector<Vec4i>& vertical,
-                         const Mat& focused) {
+void Sheet::createSheetLines(const vector<Rect>& outlines, const Mat& focused) {
   vector<Rect> horizontal;
-  for (const auto& r : horizontalOutlines) {
+  for (const auto& r : outlines) {
     const int area = r.area();
     // experimentally determined values. These work ok for A4
     // paper with what I'd consider "standard" lining.
@@ -95,12 +94,32 @@ void Sheet::analyseLines(const vector<Rect>& horizontalOutlines,
     horizontal.push_back(r);
   }
   std::sort(horizontal.begin(), horizontal.end(), musicocr::rectTop);
-  vector<SheetLine> sheetLines;
   for (const auto& h : horizontal) {
     sheetLines.emplace_back(h, focused);
   }
-  std::pair<int, int> leftRight = overallLeftRight(
-      sheetLines, focused.cols);
+  for (auto& sl : sheetLines) {
+    vector<Vec4i> lines = sl.obtainGridlines();
+    sl.accumulateHorizontalLines(lines);
+    // xxx not sure if this is pulling its weight.
+    const float slope = sl.getSlope();
+    if (std::abs(slope) >= 0.025) {
+      cout << "rotate by " << (std::abs(slope) * 45.0)
+           << " degrees " << (slope < 0 ? "counterclockwise"
+                              : "clockwise") << endl;
+      sl.rotateViewPort(slope);
+      cout << "line finding post-rotation" << endl;
+      lines = sl.obtainGridlines();
+      sl.accumulateHorizontalLines(lines);
+    }
+  }
+}
+
+
+void Sheet::analyseLines(const vector<Rect>& horizontalOutlines,
+                         const vector<Vec4i>& vertical,
+                         const Mat& focused) {
+  // createSheetLines(horizontalOutlines, focused);
+  std::pair<int, int> leftRight = overallLeftRight(sheetLines, focused.cols);
 
   // Go over vertical lines, skipping those outside sheet margins.
   // could do this later and avoid having to compute overall left right.
@@ -118,35 +137,40 @@ void Sheet::analyseLines(const vector<Rect>& horizontalOutlines,
   }
   std::sort(sortedVerticalLines.begin(), sortedVerticalLines.end(),
             musicocr::moreLeft);
-  initLineGroups(sortedVerticalLines, sheetLines);
+  initLineGroups(sortedVerticalLines);
 }
 
-void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
-                           const vector<SheetLine>& sheetLines) {
+void Sheet::initLineGroups(const vector<Vec4i>& verticalLines) {
   LineGroup *group = new LineGroup();
   addLineGroup(group);
 
-  // This is probably wrong because sometimes there are lines that
-  // are in between voice groups, or that have a title in them.
   if (config.voices > 0) {
-    for (const auto& l : sheetLines) {
+    for (size_t i = 0; i < sheetLines.size(); i++) {
+      const auto& l = sheetLines[i];
+      // TODO: a 'not-real' music line should really terminate a group.
+      if (!l.isRealMusicLine()) { continue; }
       if (group->size() >= config.voices) {
         group = new LineGroup();
         addLineGroup(group);
       }
-      group->addSheetLine(l);
+      group->addSheetLine(i);
     }
     return;
   }
 
   vector<Vec4i> crossings;
-  for (const auto& l : sheetLines) {
+  for (size_t i = 0; i < sheetLines.size(); i++) {
+    const auto& l = sheetLines[i];
     bool startNewGroup = false;
     if (group->size() == 4) {
        startNewGroup = true;
     }
     else if (group->size() > 0 && crossings.size() == 0) {
       startNewGroup = true;
+    }
+    if (!l.isRealMusicLine()) {
+        startNewGroup = true;
+        continue;
     }
     // Compute newCrossings and intersection count in any case.
     std::vector<Vec4i> newCrossings;
@@ -171,9 +195,9 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
     if (startNewGroup) {
       group = new LineGroup();
       addLineGroup(group);
-      group->addSheetLine(l);
+      group->addSheetLine(i);
     } else {
-      group->addSheetLine(l);
+      group->addSheetLine(i);
     }
     // update crossings.
     crossings.clear();
@@ -182,26 +206,6 @@ void Sheet::initLineGroups(const vector<Vec4i>& verticalLines,
     }
   }
 }
-
-size_t Sheet::getLineCount() const {
- size_t s = 0;
- for (const auto& lg : lineGroups) {
-   s += lg->size();
- }
- return s;
-}
-
-SheetLine& Sheet::getNthLine(size_t i) const {
- size_t cur = 0;
- for (const auto& lg : lineGroups) {
-   if (cur + lg->size() > i) {
-     return lg->getNthVoice(i-cur);
-   }
-   cur += lg->size();
- }
- throw(std::runtime_error("Bad line index."));
-}
-
 
 pair<int, int> Sheet::overallLeftRight(const vector<SheetLine>& lines,
                                        int maxWidth) {
@@ -390,6 +394,20 @@ void SheetLine::accumulateHorizontalLines(const vector<Vec4i>& lines) {
   }
 }
 
+void SheetLine::printInfo(Mat& draw) const {
+  const Vec4i& l = horizontalLines[0];
+  line(draw, boundingBox.tl() + Point(l[0], l[1]),
+             boundingBox.tl() + Point(l[2], l[3]), Scalar(0, 255, 0), 1);
+  const Vec4i& b = horizontalLines.back();
+  line(draw, boundingBox.tl() + Point(b[0], b[1]),
+             boundingBox.tl() + Point(b[2], b[3]), Scalar(0, 255, 0), 1);
+
+  cout << "inner box: " << innerBox
+       << ", horizontal lines go from "
+       << horizontalLines[0][1] << " to "
+       << horizontalLines.back()[1] << endl;
+}
+
 float SheetLine::getSlope() const {
   float totalSlope = 0.0;
   int totalWidth = 0;
@@ -398,8 +416,6 @@ float SheetLine::getSlope() const {
     const int xwidth = std::abs(l[2] - l[0]);
     totalWidth += xwidth;
     totalSlope += xwidth * slope;
-    cout << "line with xwdith " << xwidth
-         << " and  slope " << slope << endl;
   }
   float averageSlope = 0.0;
   if (totalWidth > 10) {
@@ -409,10 +425,12 @@ float SheetLine::getSlope() const {
   return averageSlope;
 }
 
-void SheetLine::coordinates(Mat& show) const {
+// TODO: this does everything in local-relative coordinates
+// TODO: not sure if this is good enough
+std::pair<int, int> SheetLine::coordinates() {
   if (!realMusicLine) {
     cout << "not a real music line." << endl;
-    return;
+    return std::make_pair(0, 0);
   }
   // go from innerbox left to right edge in horizontal segments
   // of about 50px. for each segment, determine top and bottom
@@ -445,13 +463,9 @@ void SheetLine::coordinates(Mat& show) const {
   map<int, int> topcounts; map<int, int> bottomcounts;
   for (const auto& topl : toplines) {
     topcounts[topl[1]] += 1;
-    line(show, Point(topl[0], topl[1]), Point(topl[2], topl[3]),
-         Scalar(0, 255, 0), 1);
   }
   for (const auto& bottoml : bottomlines) {
     bottomcounts[bottoml[1]] += 1;
-    line(show, Point(bottoml[0], bottoml[1]), Point(bottoml[2], bottoml[3]),
-         Scalar(0, 0, 255), 1);
   }
   int maxtop = 0; int maxcount = 0;
   for (const auto& tl : topcounts) {
@@ -470,10 +484,7 @@ void SheetLine::coordinates(Mat& show) const {
     }
   }
   cout << maxcount << " segments have bottom " << maxbottom << endl;
-  line(show, Point(left, maxtop), Point(right, maxtop),
-       Scalar(255, 0, 0), 1);
-  line(show, Point(left, maxbottom), Point(right, maxbottom),
-       Scalar(255, 0, 0), 1);
+  return std::make_pair(maxtop, maxbottom);
 }
 
 void SheetLine::rotateViewPort(float slope) {

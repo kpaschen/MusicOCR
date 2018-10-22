@@ -261,36 +261,81 @@ void findCorners() {
 }
 
 void findLines() {
-  vector<Rect> lineContours = sheet.find_lines_outlines(focused);
-
-  // create sheet lines for the appropriate line contours
-  // xxx: have Sheet remember which sheet line starts at which global
-  //      coordinates.
-  // vector<sheetline> vl = sheet.setupSheetLines(focused, lineContours);
-  // for each sheetline:
-  //   find hlines; rotate if necessary
-  // compare hline heights and positions across sheetlines
-
-  // It might be better to do this during contour finding.
-  vector<Vec4i> verticalLines = sheet.findVerticalLines(focused);
-  sheet.analyseLines(lineContours, verticalLines, focused);
   cvtColor(focused, cdst, COLOR_GRAY2BGR);
- 
+  vector<Rect> lineContours = sheet.find_lines_outlines(focused);
   for (const auto& r : lineContours) {
     rectangle(cdst, r, Scalar(255, 0, 0), 1);
   }
 
-  for (const auto& v : verticalLines) {
-    line(cdst, Point(v[0], v[1]), Point(v[2], v[3]),
-         Scalar(0, 255, 0), 1);
-  }
+  sheet.createSheetLines(lineContours, focused);
 
-  sheet.printSheetInfo();
+  // compare hline heights and positions across sheetlines
+  int lb = 0;
+  vector<int> d1s;
+  vector<int> d2s;
+  for (size_t i = 0; i < sheet.getLineCount(); i++) {
+    musicocr::SheetLine& cur = sheet.getNthLine(i);
+    if (!cur.isRealMusicLine()) {
+      cout << "Skipping line " << i << endl;
+      continue;
+    }
+    cout << "line " << i << ": ";
+    // This draws the top and bottom line on cdst.
+    cur.printInfo(cdst);
+
+    // Try to improve on top/bottom line finding a little.
+    // coordinates works in local coordinates, so have to transform back.
+    std::pair<int, int> tb = cur.coordinates();
+    line(cdst, Point(cur.getInnerBox().tl().x, cur.getBoundingBox().tl().y + tb.first),
+               Point(cur.getInnerBox().br().x, cur.getBoundingBox().tl().y + tb.first),
+               Scalar(0, 0, 255), 1);
+    line(cdst, Point(cur.getInnerBox().tl().x, cur.getBoundingBox().tl().y + tb.second),
+               Point(cur.getInnerBox().br().x, cur.getBoundingBox().tl().y + tb.second),
+               Scalar(0, 0, 255), 1);
+    // 'd1' is the height from top line to bottom line
+    d1s.push_back(tb.second - tb.first);
+    // 'd2' is the distance of this line's top to the previous line's bottom.
+    if (i > 0) {
+      d2s.push_back(cur.getBoundingBox().tl().y + tb.first - lb);
+    }
+    lb = cur.getBoundingBox().tl().y + tb.second;
+  }
+  std::sort(d1s.begin(), d1s.end());
+  std::sort(d2s.begin(), d2s.end());
+  int d1median, d2median;
+  if (d1s.size() == 1) { d1median = d1s[0]; }
+  else if (d1s.size() % 2 == 1) {
+    d1median = d1s[d1s.size() / 2 + 1];    
+  } else {
+    d1median = (d1s[(d1s.size() + 1) / 2] + d1s[(d1s.size() - 1) / 2]) / 2;
+  }
+  cout << "median line height: " << d1median << endl;
+  sheet.medianLineHeight = d1median;
+  if (d2s.size() == 1) { d2median = d2s[0]; }
+  else if (d2s.size() % 2 == 1) {
+    d2median = d2s[d2s.size() / 2 + 1];    
+  } else {
+    d2median = (d2s[(d2s.size() + 1) / 2] + d2s[(d2s.size() - 1) / 2]) / 2;
+  }
+  cout << "median line distance: " << d2median << endl;
+  sheet.medianLineDistance = d2median;
+
+
+  // It might be better to do this later.
+  vector<Vec4i> verticalLines = sheet.findVerticalLines(focused);
+  sheet.analyseLines(lineContours, verticalLines, focused);
+ 
+//  for (const auto& v : verticalLines) {
+//    line(cdst, Point(v[0], v[1]), Point(v[2], v[3]),
+//         Scalar(0, 255, 0), 1);
+//  }
+
+//  sheet.printSheetInfo();
   imshow("Processed", cdst);
 }
 
 void navigateSheet() {
-  if (!sheet.size()) {
+  if (!sheet.getLineCount()) {
     cerr << "Need to use 'g' first to set up a sheet." << endl;
     return;
   }
@@ -368,6 +413,15 @@ void navigateSheet() {
           vector<cv::Rect> rectangles = shapeFinder.getContourBoxes(
             processed, cont);
           musicocr::TrainingKey key;
+          musicocr::SheetLine& sheetLine = sheet.getNthLine(lineIndex);
+          // these are relative to sheetLine
+          std::pair<int, int> tb = sheetLine.coordinates();
+          cv::Rect relative = sheetLine.getInnerBox() - sheetLine.getBoundingBox().tl();
+          rectangle(cont, relative, Scalar(127, 0, 0), 1);
+          line(cont, Point(0, tb.first), Point(cont.cols, tb.first),
+                     Scalar(0, 127, 0), 1);
+          line(cont, Point(0, tb.second), Point(cont.cols, tb.second),
+                     Scalar(0, 127, 0), 1);
           for (int i = 0; i < rectangles.size(); i++) {
             rectangle(cont, rectangles[i], Scalar(0, 0, 127), 2);
             imshow("Processed", cont);
@@ -386,30 +440,100 @@ void navigateSheet() {
             float prediction = statModel->predict(sample); 
             const string& cat = key.getCategoryName((int)prediction);
             cout << "stat model says this is a " << cat << endl;
+
+            int top = rectangles[i].tl().y;
+            int bottom = rectangles[i].br().y;
+            int left = rectangles[i].tl().x;
+            int right = rectangles[i].br().x;
+            switch((int)prediction) {
+              // TODO: should have an enum for this
+              case 108:  // vertical line
+              {
+                // TODO check if it's in the inner box horizontally.
+                // does it extend past both the top and the bottom line?
+                if (top < tb.first && bottom > tb.second) {
+                  cout << "cross-voice bar line or bad smudge" << endl;
+                }
+                else {
+                  // TODO the first or last vertical line in the inner box
+                  // is usually a bar line.
+
+                  // is it at least as high as the distance between top and
+                  // bottom line or the median line height?
+                  const int minHeight = std::min(sheet.medianLineHeight,
+                    tb.second - tb.first);
+                  const int thisHeight = bottom - top;
+                  if (thisHeight >= minHeight) {
+                    cout << "It's high enough for a bar line." << endl;
+                    //   is it flush with the top or bottom line?
+                    cout << "top alignment: " << tb.first - top << endl;
+                    cout << "bottom alignment: " << tb.second - bottom << endl;
+                    if (std::abs(tb.second - bottom) < 6 ||
+                        std::abs(tb.first - top) < 6) {
+                      cout << "could be a bar line." << endl;
+                     //   later: is there a note head right above or below it?
+                     //      -> it's probably part of that note
+                     // put on list of bar lines
+                    } else {
+                      cout << "probably part of a note?" << endl;
+                      // put on list of note parts
+                    }
+                  } else {
+                  cout << "probably part of a note?" << endl;
+                  // put on list of note parts
+                  }
+               }
+              }
+              break;
+              case 100:  // dot, spec, piece, note head
+              {
+                // if it's left or right of inner box, it's a speck or a piece
+                if (right < relative.tl().x ||
+                    left > relative.br().x) {
+                  cout << "outside the inner box horizontally." << endl;
+                  break;
+                }
+                //   if it's far above or below inner box, it's a speck or a piece
+                //      (a note head that far up/down would have support lines so would
+                //       be seen as complex or piece?)
+                if (top > relative.br().y ||
+                    bottom < relative.tl().y) {
+                  cout << "outside the inner box vertically." << endl;
+                  break;
+                }
+                // determine its height relative to grid lines and put it on the note head list.
+                cout << "possible note head or dot at " << (top - tb.first) << " from top"
+                     << " and " << (tb.second - bottom) << " from bottom line."
+                     << "(line height: " << (tb.second - tb.first) << ")" 
+                     << endl;
+                
+            //   if it's small and to the right of a known note head, it's probably a dot
+            // is it inside another contour?
+            //   if it's still a speck or a piece:
+            //     look for nearby items that it could be a piece of; combine them
+            //     into a larger bounding box
+ 
+              }
+              break;
+              case 109:  // complex
+              {
+                cout << "run tesseract on this" << endl;
+               //   put it on list of complexes
+              }
+              break;
+              case 99:  // connector piece
+              {
+                //     look for nearby heads + verticals,
+                // create larger bounding box for another scan
+                cout << "connector piece." << endl;
+              }
+              break;
+              default: break; 
+            }
+
             input = waitKeyEx(0);
           }
         }
-        break;
-      case 'c':  // coordinates
-      {
-        musicocr::SheetLine& sheetLine = sheet.getNthLine(lineIndex);
-        // This does x,y,b,t,c,l
-        vector<Vec4i> lines = sheetLine.obtainGridlines();
-        sheetLine.accumulateHorizontalLines(lines);
-        const float slope = sheetLine.getSlope();
-        if (std::abs(slope) >= 0.025) {
-          cout << "rotate by " << (std::abs(slope) * 45.0)
-               << " degrees " << (slope < 0 ? "counterclockwise"
-                  : "clockwise") << endl;
-          sheetLine.rotateViewPort(slope);
-          cout << "line finding post-rotation" << endl;
-          vector<Vec4i> lines = sheetLine.obtainGridlines();
-          sheetLine.accumulateHorizontalLines(lines);
-        }
-        cvtColor(processed, cdst, COLOR_GRAY2BGR);
-        sheetLine.coordinates(cdst);
-        imshow("What is this?", cdst);
-      }
       break;
       case 'q': 
         quit = true;

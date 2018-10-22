@@ -13,7 +13,7 @@ class LineGroup;
 
 struct SheetConfig {
   int voices = 0; // 0: determine algorithmically
-  int gaussianKernel = 3; // 7 or 9?
+  int gaussianKernel = 3;
   double thresholdValue = 0.0; 
   int thresholdType = 3;  // no OTSU
   int cannyMin = 80;
@@ -33,37 +33,46 @@ class Sheet {
    // This finds contours of lines.
    std::vector<cv::Rect> find_lines_outlines(const cv::Mat&) const;
 
+   // x,y,s,t,b,l
    std::vector<cv::Vec4i> findVerticalLines(const cv::Mat&) const;
+
+   // Take contours (bounding boxes) as found by find_lines_outlines
+   // and create sheet lines for them.
+   // Also performs corrective local rotations and initialised
+   // per-sheetline horizontal lines (for coordinate finding).
+   void createSheetLines(const std::vector<cv::Rect>&, const cv::Mat&);
+
+   void analyseLines(const std::vector<cv::Rect>&,
+                     const std::vector<cv::Vec4i>&, const cv::Mat&);
 
    // Determine general left/right margins.
    static std::pair<int, int> overallLeftRight(
      const std::vector<SheetLine>&, int maxWidth);
 
-   void addLineGroup(LineGroup* group) {
-     lineGroups.push_back(std::unique_ptr<LineGroup>(group));
-   }
-
-   size_t size() const {
-     return lineGroups.size();
-   }
-   size_t getLineCount() const;
+   size_t size() const { return lineGroups.size(); }
+   size_t getLineCount() const { return sheetLines.size(); }
 
    const LineGroup& getNthLineGroup(size_t i) const {
      return *lineGroups[i];
    }
-   SheetLine& getNthLine(size_t i) const;
+   SheetLine& getNthLine(size_t i) { return sheetLines[i]; }
 
-   void analyseLines(const std::vector<cv::Rect>&,
-                     const std::vector<cv::Vec4i>&, const cv::Mat&);
    void printSheetInfo() const; 
-   std::vector<int> getSheetInfo() const;
+   std::vector<std::vector<int>> getSheetInfo() const;
+
+   int medianLineHeight;
+   int medianLineDistance;
 
  private:
-   void initLineGroups(const std::vector<cv::Vec4i>& verticalLines,
-                       const std::vector<SheetLine>& sheetLines);
+   void addLineGroup(LineGroup* group) {
+     lineGroups.push_back(std::unique_ptr<LineGroup>(group));
+   }
+
+   void initLineGroups(const std::vector<cv::Vec4i>& verticalLines);
 
    Sheet(const Sheet&) = delete;
    std::vector<std::unique_ptr<LineGroup>> lineGroups;
+   std::vector<SheetLine> sheetLines;
    SheetConfig config;
 };
 
@@ -71,14 +80,11 @@ class LineGroup {
  public:
    LineGroup() {}
    size_t size() const { return lines.size(); }
-   void addSheetLine(const SheetLine& line) {
-     lines.emplace_back(line);
+   void addSheetLine(int i) {
+     lines.push_back(i);
    }
-
-   SheetLine& getNthVoice(size_t i) { return lines[i]; }
-
- private:
-   std::vector<SheetLine> lines;
+   int getNthVoice(size_t i) const { return lines[i]; }
+   std::vector<int> lines;
 };
 
 class SheetLine {
@@ -115,9 +121,12 @@ class SheetLine {
    float getRotationSlope() const { return rotationSlope; }
    void rotateViewPort(float angle);
 
-   void coordinates(cv::Mat& show) const;
+   // Try to improve coordinate finding done in accumulateHorizontalLines.
+   std::pair<int, int> coordinates();
 
    const cv::Mat& getViewPort() const { return viewPort; }
+
+   void printInfo(cv::Mat& draw) const;
 
  private:
    static const int verticalPaddingPx = 20;
@@ -137,8 +146,6 @@ class SheetLine {
    bool realMusicLine = true;
 };
 
-
 }  // namespace musicocr
-
 
 #endif  // structured_page_hpp
