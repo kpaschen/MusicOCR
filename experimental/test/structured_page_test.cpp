@@ -50,6 +50,7 @@ void initVoiceMap(std::map<std::string, std::vector<int>>& m) {
   //  std::vector<int>({1, 1, 2, 4, 2, 1}));
 }
 
+#if 0
 TEST(StructuredPageTestSuite, TestVoiceGrouping) {
   const char *buffer = getcwd(NULL, 0);
   std::map<std::string, std::vector<int>> expected;
@@ -82,4 +83,5 @@ TEST(StructuredPageTestSuite, TestVoiceGrouping) {
               << ": wrong number of voices." << std::endl;
   }
 }
+#endif
 

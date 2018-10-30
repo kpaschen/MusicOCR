@@ -402,10 +402,10 @@ void SheetLine::printInfo(Mat& draw) const {
   line(draw, boundingBox.tl() + Point(b[0], b[1]),
              boundingBox.tl() + Point(b[2], b[3]), Scalar(0, 255, 0), 1);
 
-  cout << "inner box: " << innerBox
-       << ", horizontal lines go from "
-       << horizontalLines[0][1] << " to "
-       << horizontalLines.back()[1] << endl;
+  //cout << "inner box: " << innerBox
+  //     << ", horizontal lines go from "
+  //     << horizontalLines[0][1] << " to "
+  //     << horizontalLines.back()[1] << endl;
 }
 
 float SheetLine::getSlope() const {
@@ -474,7 +474,7 @@ std::pair<int, int> SheetLine::coordinates() {
       maxcount = tl.second;
     }
   }
-  cout << maxcount << " segments have top " << maxtop << endl;
+  //cout << maxcount << " segments have top " << maxtop << endl;
   int maxbottom = 0;
   maxcount = 0;
   for (const auto& tl : bottomcounts) {
@@ -483,8 +483,12 @@ std::pair<int, int> SheetLine::coordinates() {
       maxcount = tl.second;
     }
   }
-  cout << maxcount << " segments have bottom " << maxbottom << endl;
+  //cout << maxcount << " segments have bottom " << maxbottom << endl;
   return std::make_pair(maxtop, maxbottom);
+}
+
+std::pair<int, int> SheetLine::getCoordinates() const {
+  return std::make_pair(horizontalLines[0][1], horizontalLines.back()[1]);
 }
 
 void SheetLine::rotateViewPort(float slope) {

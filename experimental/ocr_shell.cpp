@@ -6,6 +6,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "corners.hpp"
+#include "recognition.hpp"
 #include "structured_page.hpp"
 #include "shapes.hpp"
 #include "training.hpp"
@@ -320,7 +321,6 @@ void findLines() {
   cout << "median line distance: " << d2median << endl;
   sheet.medianLineDistance = d2median;
 
-
   // It might be better to do this later.
   vector<Vec4i> verticalLines = sheet.findVerticalLines(focused);
   sheet.analyseLines(lineContours, verticalLines, focused);
@@ -348,7 +348,6 @@ void navigateSheet() {
 
   musicocr::ContourConfig config;
   makeContourConfig(&config);
-  musicocr::ShapeFinder shapeFinder(config);
 
   size_t sheetSize = sheet.getLineCount();
   bool quit = false;
@@ -395,6 +394,7 @@ void navigateSheet() {
                 filename.c_str(), lineIndex);
         // this will overwrite the file if it exists.
         responseStream.open(responseFileName);
+        musicocr::ShapeFinder shapeFinder(config);
         shapeFinder.getTrainingDataForLine(
           processed, "Processed", "What is this?", filenameBase,
           responseStream);
@@ -407,132 +407,12 @@ void navigateSheet() {
             cerr << "Missing a trained model." << endl;
             break;
           }
-          Mat cont;
-          cvtColor(processed, cont, COLOR_GRAY2BGR);
-          musicocr::SampleData sd;
-          vector<cv::Rect> rectangles = shapeFinder.getContourBoxes(
-            processed, cont);
-          musicocr::TrainingKey key;
+          musicocr::Scanner scanner;
           musicocr::SheetLine& sheetLine = sheet.getNthLine(lineIndex);
-          // these are relative to sheetLine
-          std::pair<int, int> tb = sheetLine.coordinates();
-          cv::Rect relative = sheetLine.getInnerBox() - sheetLine.getBoundingBox().tl();
-          rectangle(cont, relative, Scalar(127, 0, 0), 1);
-          line(cont, Point(0, tb.first), Point(cont.cols, tb.first),
-                     Scalar(0, 127, 0), 1);
-          line(cont, Point(0, tb.second), Point(cont.cols, tb.second),
-                     Scalar(0, 127, 0), 1);
-          for (int i = 0; i < rectangles.size(); i++) {
-            rectangle(cont, rectangles[i], Scalar(0, 0, 127), 2);
-            imshow("Processed", cont);
-
-            Mat partial = Mat(processed, rectangles[i]);
-            cout << "showing contour with area " << rectangles[i].area()
-                 << " at coordinates " << rectangles[i].tl()
-                 << " to " << rectangles[i].br() << endl;
-            Mat scaleup;
-            resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
-            imshow("What is this?", scaleup);
-
-            // what does the system think this is.
-            cv::Mat sample = sd.makeSampleMatrix(
-                partial, rectangles[i].tl().x, rectangles[i].tl().y);
-            float prediction = statModel->predict(sample); 
-            const string& cat = key.getCategoryName((int)prediction);
-            cout << "stat model says this is a " << cat << endl;
-
-            int top = rectangles[i].tl().y;
-            int bottom = rectangles[i].br().y;
-            int left = rectangles[i].tl().x;
-            int right = rectangles[i].br().x;
-            switch((int)prediction) {
-              // TODO: should have an enum for this
-              case 108:  // vertical line
-              {
-                // TODO check if it's in the inner box horizontally.
-                // does it extend past both the top and the bottom line?
-                if (top < tb.first && bottom > tb.second) {
-                  cout << "cross-voice bar line or bad smudge" << endl;
-                }
-                else {
-                  // TODO the first or last vertical line in the inner box
-                  // is usually a bar line.
-
-                  // is it at least as high as the distance between top and
-                  // bottom line or the median line height?
-                  const int minHeight = std::min(sheet.medianLineHeight,
-                    tb.second - tb.first);
-                  const int thisHeight = bottom - top;
-                  if (thisHeight >= minHeight) {
-                    cout << "It's high enough for a bar line." << endl;
-                    //   is it flush with the top or bottom line?
-                    cout << "top alignment: " << tb.first - top << endl;
-                    cout << "bottom alignment: " << tb.second - bottom << endl;
-                    if (std::abs(tb.second - bottom) < 6 ||
-                        std::abs(tb.first - top) < 6) {
-                      cout << "could be a bar line." << endl;
-                     //   later: is there a note head right above or below it?
-                     //      -> it's probably part of that note
-                     // put on list of bar lines
-                    } else {
-                      cout << "probably part of a note?" << endl;
-                      // put on list of note parts
-                    }
-                  } else {
-                  cout << "probably part of a note?" << endl;
-                  // put on list of note parts
-                  }
-               }
-              }
-              break;
-              case 100:  // dot, spec, piece, note head
-              {
-                // if it's left or right of inner box, it's a speck or a piece
-                if (right < relative.tl().x ||
-                    left > relative.br().x) {
-                  cout << "outside the inner box horizontally." << endl;
-                  break;
-                }
-                //   if it's far above or below inner box, it's a speck or a piece
-                //      (a note head that far up/down would have support lines so would
-                //       be seen as complex or piece?)
-                if (top > relative.br().y ||
-                    bottom < relative.tl().y) {
-                  cout << "outside the inner box vertically." << endl;
-                  break;
-                }
-                // determine its height relative to grid lines and put it on the note head list.
-                cout << "possible note head or dot at " << (top - tb.first) << " from top"
-                     << " and " << (tb.second - bottom) << " from bottom line."
-                     << "(line height: " << (tb.second - tb.first) << ")" 
-                     << endl;
-                
-            //   if it's small and to the right of a known note head, it's probably a dot
-            // is it inside another contour?
-            //   if it's still a speck or a piece:
-            //     look for nearby items that it could be a piece of; combine them
-            //     into a larger bounding box
  
-              }
-              break;
-              case 109:  // complex
-              {
-                cout << "run tesseract on this" << endl;
-               //   put it on list of complexes
-              }
-              break;
-              case 99:  // connector piece
-              {
-                //     look for nearby heads + verticals,
-                // create larger bounding box for another scan
-                cout << "connector piece." << endl;
-              }
-              break;
-              default: break; 
-            }
-
-            input = waitKeyEx(0);
-          }
+          musicocr::ShapeFinder shapeFinder(config);
+          shapeFinder.scanLine(sheetLine, statModel, scanner, "Processed",
+            "What is this?");
         }
       break;
       case 'q': 

@@ -9,76 +9,76 @@
 
 void initRegressionMap(std::map<std::string, std::vector<cv::Point>>& m) {
    m.emplace("sample1.jpg", std::vector<cv::Point>({
-     cv::Point(25, 44), cv::Point(840,44), cv::Point(840,667),
+     cv::Point(24, 44), cv::Point(840,49), cv::Point(840,667),
      cv::Point(28,676)
    }));
    m.emplace("DSC_0177.jpg", std::vector<cv::Point>({
-     cv::Point(5, 28), cv::Point(919,28), cv::Point(920,675),
+     cv::Point(5, 28), cv::Point(919,28), cv::Point(919,675),
      cv::Point(9,675)
    }));
    m.emplace("DSC_0178.jpg", std::vector<cv::Point>({
-     cv::Point(0, 2), cv::Point(693,1), cv::Point(693,913),
-     cv::Point(0,912)
+     cv::Point(0, 3), cv::Point(693,4), cv::Point(693,914),
+     cv::Point(0,910)
    }));
    m.emplace("DSC_0179.jpg", std::vector<cv::Point>({
-     cv::Point(68, 80), cv::Point(924,79), cv::Point(924,492),
+     cv::Point(68, 80), cv::Point(924,80), cv::Point(924,493),
      cv::Point(73,494)
    }));
    m.emplace("DSC_0180.jpg", std::vector<cv::Point>({
-     cv::Point(40, 11), cv::Point(917,12), cv::Point(917,671),
-     cv::Point(46,671)
+     cv::Point(41, 9), cv::Point(917,10), cv::Point(917,672),
+     cv::Point(50,669)
    }));
    m.emplace("DSC_0181.jpg", std::vector<cv::Point>({
-     cv::Point(0, 65), cv::Point(806,68), cv::Point(817,664),
-     cv::Point(0,683)
+     cv::Point(0, 65), cv::Point(801,67), cv::Point(817,676),
+     cv::Point(0,680)
    }));
    m.emplace("DSC_0182.jpg", std::vector<cv::Point>({
-     cv::Point(16, 55), cv::Point(848,58), cv::Point(845,598),
-     cv::Point(17,624)
+     cv::Point(16, 54), cv::Point(848,61), cv::Point(845,598),
+     cv::Point(18,624)
    }));
    m.emplace("DSC_0184.jpg", std::vector<cv::Point>({
      cv::Point(50, 44), cv::Point(892,44), cv::Point(900,618),
      cv::Point(52,620)
    }));
    m.emplace("DSC_0186.jpg", std::vector<cv::Point>({
-     cv::Point(28, 26), cv::Point(898,27), cv::Point(904,656),
+     cv::Point(28, 26), cv::Point(890,30), cv::Point(896,656),
      cv::Point(30,656)
    }));
    m.emplace("DSC_0130.jpg", std::vector<cv::Point>({
-     cv::Point(0, 138), cv::Point(692,133), cv::Point(692,904),
-     cv::Point(0,899)
+     cv::Point(0, 127), cv::Point(693,125), cv::Point(693,906),
+     cv::Point(0,904)
    }));
    m.emplace("DSC_0131.jpg", std::vector<cv::Point>({
-     cv::Point(0, 4), cv::Point(693,5), cv::Point(693,905),
+     cv::Point(0, 5), cv::Point(693,5), cv::Point(693,905),
      cv::Point(0,901)
    }));
    m.emplace("DSC_0206.jpg", std::vector<cv::Point>({
-     cv::Point(0, 3), cv::Point(686,3), cv::Point(689,794),
-     cv::Point(0,786)
+     cv::Point(0, 3), cv::Point(687,3), cv::Point(687,827),
+     cv::Point(0,827)
    }));
    m.emplace("DSC_0207.jpg", std::vector<cv::Point>({
-     cv::Point(0, 8), cv::Point(659,2), cv::Point(659,859),
-     cv::Point(0,867)
+     cv::Point(0, 4), cv::Point(659,2), cv::Point(659,859),
+     cv::Point(0,866)
    }));
    m.emplace("DSC_0208.jpg", std::vector<cv::Point>({
-     cv::Point(0, 0), cv::Point(744,0), cv::Point(744,679),
+     cv::Point(2, 0), cv::Point(744,0), cv::Point(744,679),
      cv::Point(16,683)
    }));
    m.emplace("DSC_0209.jpg", std::vector<cv::Point>({
-     cv::Point(0, 0), cv::Point(661,0), cv::Point(667,693),
+     cv::Point(0, 0), cv::Point(656,0), cv::Point(667,693),
      cv::Point(0,693)
    }));
    m.emplace("DSC_0212.jpg", std::vector<cv::Point>({
-     cv::Point(0, 1), cv::Point(655,6), cv::Point(659,876),
-     cv::Point(4,876)
+     cv::Point(0, 1), cv::Point(655,6), cv::Point(658,876),
+     cv::Point(0,876)
    }));
    // A regression on this would probably be an improvement.
    m.emplace("DSC_0213.jpg", std::vector<cv::Point>({
-     cv::Point(0, 88), cv::Point(685,88), cv::Point(685,869),
-     cv::Point(0,861)
+     cv::Point(37, 88), cv::Point(693,88), cv::Point(693,869),
+     cv::Point(37,861)
    }));
    m.emplace("DSC_0214.jpg", std::vector<cv::Point>({
-     cv::Point(14, 76), cv::Point(674,80), cv::Point(674,917),
+     cv::Point(14, 76), cv::Point(674,80), cv::Point(674,916),
      cv::Point(29,920)
    }));
 }

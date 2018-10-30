@@ -5,56 +5,76 @@ namespace musicocr {
   std::string TrainingKey::unknown_category = "Unknown Category";
 
   TrainingKey::TrainingKey() {
-    trainingKey.emplace(101, "eighth break");  // 'e'
-    trainingKey.emplace(120, "quarter break");  // 'x'
-    trainingKey.emplace(98, "2-4 beats break"); // 'b'
+    trainingKey.emplace(Category::eighthbreak, "eighth break");  // 'e'
+    trainingKey.emplace(Category::quarterbreak, "quarter break");  // 'x'
+    trainingKey.emplace(Category::barbreak, "2-4 beats break"); // 'b'
   
     // horizontal or curved lines
-    trainingKey.emplace(99, "connector piece"); // 'c'
+    trainingKey.emplace(Category::connector, "connector piece"); // 'c'
   
-    trainingKey.emplace(108, "vertical line"); // 'l'
-    trainingKey.emplace(100, "dot"); // 'd'
+    trainingKey.emplace(Category::vertical, "vertical line"); // 'l'
+    trainingKey.emplace(Category::bar, "bar line");
+    trainingKey.emplace(Category::dot, "dot"); // 'd'
   
     // accidentals
-    trainingKey.emplace(102, "flat");  // 'f'
-    trainingKey.emplace(115, "sharp");  // 's'
-    trainingKey.emplace(117, "undo accidental"); // 'u'
+    trainingKey.emplace(Category::flat, "flat");  // 'f'
+    trainingKey.emplace(Category::sharp, "sharp");  // 's'
+    trainingKey.emplace(Category::undoaccidental, "undo accidental"); // 'u'
   
     // filled or empty note head
-    trainingKey.emplace(104, "note head");  // 'h'
+    trainingKey.emplace(Category::notehead, "note head");  // 'h'
     // note head and vertical line
-    trainingKey.emplace(110, "note");
+    trainingKey.emplace(Category::note, "note");
 
     // A thing to skip
-    trainingKey.emplace(107, "speck"); // 'k'
+    trainingKey.emplace(Category::speck, "speck"); // 'k'
   
     // This is mostly for badly segmented pieces.
-    trainingKey.emplace(109, "complex"); // 'm'
-    trainingKey.emplace(97, "character"); // 'a'
-    trainingKey.emplace(103, "violin clef"); // 'g'
-    trainingKey.emplace(105, "bass clef"); // 'i'
+    trainingKey.emplace(Category::multiple, "complex"); // 'm'
+    trainingKey.emplace(Category::character, "character"); // 'a'
+    trainingKey.emplace(Category::violinclef, "violin clef"); // 'g'
+    trainingKey.emplace(Category::bassclef, "bass clef"); // 'i'
   
     // A small piece of a larger item that has no meaning by itself.
-    trainingKey.emplace(112, "piece");  // 'p'
+    trainingKey.emplace(Category::piece, "piece");  // 'p'
 
     // Now the projection map for the stat models.
-    trainingKeyForStatModels.emplace(97, 109); // alphanum -> complex
-    trainingKeyForStatModels.emplace(98, 109); // bar break
-    trainingKeyForStatModels.emplace(101, 109); // eighth break
-    trainingKeyForStatModels.emplace(102, 109); // flat
-    trainingKeyForStatModels.emplace(103, 109); // violin clef
-    trainingKeyForStatModels.emplace(105, 109); // bass clef
-    trainingKeyForStatModels.emplace(109, 109); // complex
-    trainingKeyForStatModels.emplace(110, 109); // note
-    trainingKeyForStatModels.emplace(115, 109); // sharp
-    trainingKeyForStatModels.emplace(117, 109); // undo accidental
-    trainingKeyForStatModels.emplace(120, 109); // quarter break
-    trainingKeyForStatModels.emplace(99, 99); // connector piece
-    trainingKeyForStatModels.emplace(100, 100); // dot
-    trainingKeyForStatModels.emplace(104, 100); // note head
-    trainingKeyForStatModels.emplace(107, 100); // speck
-    trainingKeyForStatModels.emplace(112, 100); // piece
-    trainingKeyForStatModels.emplace(108, 108); // vertical line
+    trainingKeyForStatModels.emplace(Category::character,
+        TopLevelCategory::composite); // alphanum -> complex
+    trainingKeyForStatModels.emplace(Category::barbreak,
+        TopLevelCategory::composite); // bar break
+    trainingKeyForStatModels.emplace(Category::eighthbreak,
+        TopLevelCategory::composite); // eighth break
+    trainingKeyForStatModels.emplace(Category::flat,
+        TopLevelCategory::composite); // flat
+    trainingKeyForStatModels.emplace(Category::violinclef,
+        TopLevelCategory::composite); // violin clef
+    trainingKeyForStatModels.emplace(Category::bassclef,
+        TopLevelCategory::composite); // bass clef
+    trainingKeyForStatModels.emplace(Category::multiple,
+        TopLevelCategory::composite); // complex
+    trainingKeyForStatModels.emplace(Category::note,
+        TopLevelCategory::composite); // note
+    trainingKeyForStatModels.emplace(Category::sharp,
+        TopLevelCategory::composite); // sharp
+    trainingKeyForStatModels.emplace(Category::undoaccidental,
+        TopLevelCategory::composite); // undo accidental
+    trainingKeyForStatModels.emplace(Category::quarterbreak,
+        TopLevelCategory::composite); // quarter break
+    trainingKeyForStatModels.emplace(Category::connector,
+        TopLevelCategory::hline); // connector piece
+    trainingKeyForStatModels.emplace(Category::dot,
+        TopLevelCategory::round); // dot
+    trainingKeyForStatModels.emplace(Category::notehead,
+        TopLevelCategory::round); // note head
+    trainingKeyForStatModels.emplace(Category::speck,
+        TopLevelCategory::round); // speck
+    trainingKeyForStatModels.emplace(Category::piece,
+        TopLevelCategory::round); // piece
+    trainingKeyForStatModels.emplace(Category::vertical,
+        TopLevelCategory::vline); // vertical line
+    trainingKeyForStatModels.emplace(Category::bar,
+        TopLevelCategory::vline); // vertical line
   }
 
 const std::string& TrainingKey::getCategoryName(int basicCategory) const {

@@ -12,6 +12,19 @@ public:
     basic, statmodel
   };
 
+  enum TopLevelCategory {
+    unknown = 0, vline = 108, round = 100, hline = 99, composite = 109
+  };
+  
+  enum Category {
+    undefined = 0, character = 97, barbreak = 98, connector = 99,
+    dot = 100, eighthbreak = 101,
+    flat = 102, violinclef = 103, notehead = 104,
+    bassclef = 105, bar = 106, speck = 107, vertical = 108, multiple = 109,
+    note = 110, piece = 112, sharp = 115, undoaccidental = 117,
+    quarterbreak = 120
+  };
+
   TrainingKey();
 
   const std::string& getCategoryName(int basicCategory) const;

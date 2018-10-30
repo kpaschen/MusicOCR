@@ -124,6 +124,8 @@ class SheetLine {
    // Try to improve coordinate finding done in accumulateHorizontalLines.
    std::pair<int, int> coordinates();
 
+   // Return previously found coordinates (top, bottom line).
+   std::pair<int, int> getCoordinates() const;
    const cv::Mat& getViewPort() const { return viewPort; }
 
    void printInfo(cv::Mat& draw) const;
