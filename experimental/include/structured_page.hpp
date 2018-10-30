@@ -90,6 +90,7 @@ class SheetLine {
    const cv::Rect& getBoundingBox() const { return boundingBox; }
    const cv::Rect& getInnerBox() const { return innerBox; }
 
+   bool hasShapeFinder() const { return (shapeFinder.get() != NULL); }
    ShapeFinder& getShapeFinder() { return *(shapeFinder.get()); }
    void setShapeFinder(ShapeFinder* sf);
 

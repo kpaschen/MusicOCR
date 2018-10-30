@@ -423,11 +423,17 @@ void navigateSheet() {
             cerr << "Missing a trained model." << endl;
             break;
           }
-          musicocr::Scanner scanner;
-          musicocr::SheetLine& sheetLine = sheet.getNthLine(lineIndex);
+          auto& sheetLine = sheet.getNthLine(lineIndex);
+          if (!sheetLine.hasShapeFinder()) {
+            musicocr::ContourConfig config;
+            makeContourConfig(&config);
+            musicocr::ShapeFinder* sf = new musicocr::ShapeFinder(config);
+            sheetLine.setShapeFinder(sf);
+            sf->initLineScan(sheetLine, statModel);
+          }
  
-          musicocr::ShapeFinder shapeFinder(config);
-          shapeFinder.scanLine(sheetLine, statModel, scanner, "Processed",
+          musicocr::Scanner scanner;
+          sheetLine.getShapeFinder().scanLine(sheetLine, statModel, scanner, "Processed",
             "What is this?");
         }
       break;

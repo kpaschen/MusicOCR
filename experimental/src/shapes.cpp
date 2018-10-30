@@ -357,8 +357,9 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
                            const string& processedWindowName,
                            const string& questionWindowName) {
 
-  initLineScan(sheetLine, statModel);
-  cout << "voice position: " << voicePosition << endl;
+  if (voicePosition == -1) {
+    initLineScan(sheetLine, statModel);
+  }
   Mat viewPort = sheetLine.getViewPort().clone();
 
   Mat cont;
@@ -445,7 +446,6 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
           }   
         }
         break;
-
         default: break;
       }
 
@@ -465,16 +465,19 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
       Mat partial = Mat(viewPort, r);
 
       Mat scaleup;
-      resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
-      imshow(questionWindowName, scaleup);
+      //resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
+      //imshow(questionWindowName, scaleup);
 
       // TODO: send prep into stat model?
-      waitKey(0);
+      //waitKey(0);
       Mat prep = preprocess(partial);
       resize(prep, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
       imshow(questionWindowName, scaleup);
       ocr.process(scaleup);
-      waitKey(0);
+      int input = waitKeyEx(0);
+      if (input == 'q') {
+        return;
+      }
     }
   }
 }
