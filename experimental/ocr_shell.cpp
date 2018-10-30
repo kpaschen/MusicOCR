@@ -149,6 +149,7 @@ void findCorners();
 void findLines();
 void navigateSheet();
 void processImage();
+void scanImage();
 
 int main(int argc, char** argv) {
   if (argc < 2) {
@@ -246,6 +247,9 @@ int main(int argc, char** argv) {
         cout << "Bye." << endl;
         quit = true;
         break;
+      case 's':
+        scanImage();
+        break;
       default:
         break;
     }
@@ -270,68 +274,13 @@ void findLines() {
 
   sheet.createSheetLines(lineContours, focused);
 
-  // compare hline heights and positions across sheetlines
-  int lb = 0;
-  vector<int> d1s;
-  vector<int> d2s;
-  for (size_t i = 0; i < sheet.getLineCount(); i++) {
-    musicocr::SheetLine& cur = sheet.getNthLine(i);
-    if (!cur.isRealMusicLine()) {
-      cout << "Skipping line " << i << endl;
-      continue;
-    }
-    cout << "line " << i << ": ";
-    // This draws the top and bottom line on cdst.
-    cur.printInfo(cdst);
-
-    // Try to improve on top/bottom line finding a little.
-    // coordinates works in local coordinates, so have to transform back.
-    std::pair<int, int> tb = cur.coordinates();
-    line(cdst, Point(cur.getInnerBox().tl().x, cur.getBoundingBox().tl().y + tb.first),
-               Point(cur.getInnerBox().br().x, cur.getBoundingBox().tl().y + tb.first),
-               Scalar(0, 0, 255), 1);
-    line(cdst, Point(cur.getInnerBox().tl().x, cur.getBoundingBox().tl().y + tb.second),
-               Point(cur.getInnerBox().br().x, cur.getBoundingBox().tl().y + tb.second),
-               Scalar(0, 0, 255), 1);
-    // 'd1' is the height from top line to bottom line
-    d1s.push_back(tb.second - tb.first);
-    // 'd2' is the distance of this line's top to the previous line's bottom.
-    if (i > 0) {
-      d2s.push_back(cur.getBoundingBox().tl().y + tb.first - lb);
-    }
-    lb = cur.getBoundingBox().tl().y + tb.second;
-  }
-  std::sort(d1s.begin(), d1s.end());
-  std::sort(d2s.begin(), d2s.end());
-  int d1median, d2median;
-  if (d1s.size() == 1) { d1median = d1s[0]; }
-  else if (d1s.size() % 2 == 1) {
-    d1median = d1s[d1s.size() / 2 + 1];    
-  } else {
-    d1median = (d1s[(d1s.size() + 1) / 2] + d1s[(d1s.size() - 1) / 2]) / 2;
-  }
-  cout << "median line height: " << d1median << endl;
-  sheet.medianLineHeight = d1median;
-  if (d2s.size() == 1) { d2median = d2s[0]; }
-  else if (d2s.size() % 2 == 1) {
-    d2median = d2s[d2s.size() / 2 + 1];    
-  } else {
-    d2median = (d2s[(d2s.size() + 1) / 2] + d2s[(d2s.size() - 1) / 2]) / 2;
-  }
-  cout << "median line distance: " << d2median << endl;
-  sheet.medianLineDistance = d2median;
-
-  // It might be better to do this later.
-  vector<Vec4i> verticalLines = sheet.findVerticalLines(focused);
-  sheet.analyseLines(lineContours, verticalLines, focused);
- 
-//  for (const auto& v : verticalLines) {
-//    line(cdst, Point(v[0], v[1]), Point(v[2], v[3]),
-//         Scalar(0, 255, 0), 1);
-//  }
-
 //  sheet.printSheetInfo();
   imshow("Processed", cdst);
+}
+
+void scanImage() {
+  for (size_t i = 0; i < sheet.getLineCount(); i++) {
+  }
 }
 
 void navigateSheet() {

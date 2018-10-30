@@ -33,21 +33,11 @@ class Sheet {
    // This finds contours of lines.
    std::vector<cv::Rect> find_lines_outlines(const cv::Mat&) const;
 
-   // x,y,s,t,b,l
-   std::vector<cv::Vec4i> findVerticalLines(const cv::Mat&) const;
-
    // Take contours (bounding boxes) as found by find_lines_outlines
    // and create sheet lines for them.
    // Also performs corrective local rotations and initialised
    // per-sheetline horizontal lines (for coordinate finding).
    void createSheetLines(const std::vector<cv::Rect>&, const cv::Mat&);
-
-   void analyseLines(const std::vector<cv::Rect>&,
-                     const std::vector<cv::Vec4i>&, const cv::Mat&);
-
-   // Determine general left/right margins.
-   static std::pair<int, int> overallLeftRight(
-     const std::vector<SheetLine>&, int maxWidth);
 
    size_t size() const { return lineGroups.size(); }
    size_t getLineCount() const { return sheetLines.size(); }
@@ -59,9 +49,6 @@ class Sheet {
 
    void printSheetInfo() const; 
    std::vector<std::vector<int>> getSheetInfo() const;
-
-   int medianLineHeight;
-   int medianLineDistance;
 
  private:
    void addLineGroup(LineGroup* group) {
