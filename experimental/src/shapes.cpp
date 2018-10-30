@@ -334,11 +334,28 @@ void ShapeFinder::initLineScan(const SheetLine& sheetLine,
   cout << "voice position: " << voicePosition << endl;
 }
 
-vector<Shape> ShapeFinder::scanLine(const SheetLine& sheetLine,
-                                    const cv::Ptr<cv::ml::StatModel>& statModel,
-                                    const Scanner& ocr,
-                                    const string& processedWindowName,
-                                    const string& questionWindowName) {
+const std::vector<int> ShapeFinder::getBarPositions() const {
+  std::vector<int> ret;
+  for (const auto& bl : barLines) {
+    ret.emplace_back(bl.first);
+  }
+  return ret;
+}
+
+const Shape* ShapeFinder::getBarAt(int x) const {
+  const auto& b = barLines.find(x);
+  if (b == barLines.end()) {
+    cerr << "no bar line exists at position " << x << endl;
+    return NULL;
+  }
+  return b->second; 
+}
+
+void ShapeFinder::scanLine(const SheetLine& sheetLine,
+                           const cv::Ptr<cv::ml::StatModel>& statModel,
+                           const Scanner& ocr,
+                           const string& processedWindowName,
+                           const string& questionWindowName) {
 
   initLineScan(sheetLine, statModel);
   cout << "voice position: " << voicePosition << endl;
@@ -460,12 +477,6 @@ vector<Shape> ShapeFinder::scanLine(const SheetLine& sheetLine,
       waitKey(0);
     }
   }
-
-  // TODO: compile shapelist from shapes, or return map.
-  shapes.clear();
-
-  vector<Shape> shapelist;
-  return shapelist;
 }
 
 Mat ShapeFinder::preprocess(const Mat& img) {

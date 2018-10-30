@@ -5,11 +5,11 @@
 #include <opencv2/imgproc.hpp>
 #include <vector>
 
-
 namespace musicocr {
 
 class SheetLine;
 class LineGroup;
+class ShapeFinder;
 
 struct SheetConfig {
   int voices = 0; // 0: determine algorithmically
@@ -83,13 +83,15 @@ class SheetLine {
    // SheetLine will initialize its local viewport
    // to Rect(Mat).
    SheetLine(const cv::Rect&, const cv::Mat&);
-   bool crossedBy(const cv::Vec4i&) const;
 
    int getLeftEdge() const { return boundingBox.tl().x; }
    int getRightEdge() const { return boundingBox.br().x; }
 
    const cv::Rect& getBoundingBox() const { return boundingBox; }
    const cv::Rect& getInnerBox() const { return innerBox; }
+
+   ShapeFinder& getShapeFinder() { return *(shapeFinder.get()); }
+   void setShapeFinder(ShapeFinder* sf);
 
    // Transform a clone of viewport and obtain horizontal lines.
    std::vector<cv::Vec4i> obtainGridlines() const;
@@ -123,6 +125,8 @@ class SheetLine {
    static const int minHorizontalLines = 4;
 
    static cv::Rect BoundingBox(const cv::Rect&, int rows, int cols);
+
+   std::unique_ptr<ShapeFinder> shapeFinder;
 
    cv::Mat viewPort;
    cv::Rect boundingBox, innerBox;

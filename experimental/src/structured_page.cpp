@@ -3,6 +3,7 @@
 #include <opencv2/highgui.hpp>
 #include <unordered_map>
 
+#include "shapes.hpp"
 #include "structured_page.hpp"
 #include "utils.hpp"
 
@@ -102,29 +103,16 @@ SheetLine::SheetLine(const Rect& r, const Mat& page) {
   viewPort = page(boundingBox).clone();
 }
 
-bool SheetLine::crossedBy(const cv::Vec4i& vertical) const {
- const Point topLeft = innerBox.tl();
- const Point bottomRight = innerBox.br();
-
- // Discard lines that are to the left or right of the bounding box.
- // This could be done one level above for speed if necessary.
- if (vertical[0] < topLeft.x  || vertical[0] > bottomRight.x) {
-   return false;
- }
-
- const int top = std::min(vertical[1], vertical[3]);
- const int bottom = std::max(vertical[1], vertical[3]);
-
- return (top <= (bottomRight.y - verticalPaddingPx/2)
-         && bottom >= (topLeft.y + verticalPaddingPx/2));
-}
-
 Rect SheetLine::BoundingBox(const Rect& r, int rows, int cols) {
   const int top = std::max(0, r.tl().y - verticalPaddingPx);
   const int bottom = std::min(rows, r.br().y + verticalPaddingPx);
   const int left = std::max(0, r.tl().x - horizontalPaddingPx);
   const int right = std::min(cols, r.br().x + horizontalPaddingPx);
   return Rect(Point(left, top), Point(right, bottom));
+}
+
+void SheetLine::setShapeFinder(ShapeFinder* sf) {
+  shapeFinder.reset(sf);
 }
 
 vector<Vec4i> SheetLine::obtainGridlines() const {

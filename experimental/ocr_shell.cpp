@@ -224,6 +224,7 @@ int main(int argc, char** argv) {
          << endl << "'g': find grid. "
          << endl << "'n': start navigating line by line."
          << endl << "'p': enter processing loop."
+         << endl << "'s': scan."
          << endl;
     input = waitKeyEx(0);
     switch(input) {
@@ -266,21 +267,87 @@ void findCorners() {
 }
 
 void findLines() {
-  cvtColor(focused, cdst, COLOR_GRAY2BGR);
   vector<Rect> lineContours = sheet.find_lines_outlines(focused);
+
+  cout << "have line countours, drawing." << endl;
+
+  cvtColor(focused, cdst, COLOR_GRAY2BGR);
   for (const auto& r : lineContours) {
     rectangle(cdst, r, Scalar(255, 0, 0), 1);
   }
+  imshow("Processed", cdst);
+
+  cout << "creating sheet lines." << endl;
 
   sheet.createSheetLines(lineContours, focused);
 
 //  sheet.printSheetInfo();
-  imshow("Processed", cdst);
 }
 
 void scanImage() {
-  for (size_t i = 0; i < sheet.getLineCount(); i++) {
+  if (!sheet.getLineCount()) {
+    cerr << "Need to use 'g' first to set up a sheet." << endl;
+    return;
   }
+  if (!statModel || !statModel->isTrained()) {
+    cerr << "Missing a trained model." << endl;
+    return;
+  }
+  musicocr::ContourConfig config;
+  makeContourConfig(&config);
+  int previousVoicePosition = 0;
+  for (size_t i = 0; i < sheet.getLineCount(); i++) {
+    auto& sl = sheet.getNthLine(i);
+    if (!sl.isRealMusicLine()) continue;
+
+    musicocr::ShapeFinder* sf = new musicocr::ShapeFinder(config);
+    sl.setShapeFinder(sf);
+    sf->initLineScan(sl, statModel);  // TODO: move this to setShapeFinder?
+
+    int voicePosition = sf->getVoicePosition();
+    cout << "line " << i << " has voice position " << voicePosition << endl;
+
+    // xxx: compare with previousVoicePosition to decide if this is plausible.
+
+    // determine theoretical top/bottom of bar lines based on voice position
+    const cv::Rect& bb = sl.getBoundingBox();
+    const int top = bb.tl().y;
+    const int bottom = bb.br().y;
+
+    // These are relative to bb.
+    const std::pair<int, int> coords = sl.getCoordinates();
+    int bltop, blbottom;
+    switch(voicePosition) {
+      case 0: // just individual lines
+        bltop = coords.first + top;
+        blbottom = coords.second + top;
+        break;
+      case 1: // top voice
+        bltop = coords.first + top; 
+        blbottom = bottom;
+        break;
+      case 2: // middle voice
+        bltop = top;
+        blbottom = bottom;
+        break;
+      case 3: // bottom voice
+        bltop = top;
+        blbottom = coords.second + top;
+        break;
+    }
+    previousVoicePosition = voicePosition;
+
+    const std::vector<int> bp = sf->getBarPositions();
+    for (size_t i = 0; i < bp.size(); i++) {
+      const musicocr::Shape* s = sf->getBarAt(bp[i]);
+      const cv::Rect& sr = s->getRectangle() + bb.tl();
+      const int middleX = sr.tl().x + (sr.br().x - sr.tl().x) / 2;
+      line(cdst, cv::Point(middleX, bltop), cv::Point(middleX, blbottom),
+           Scalar(0, 0, 127), 1);
+      rectangle(cdst, sr, Scalar(0, 200, 0), 1);
+    }
+  }
+  imshow("Processed", cdst);
 }
 
 void navigateSheet() {

@@ -44,17 +44,14 @@ class ShapeFinder {
 
    void initLineScan(const musicocr::SheetLine& sheetLine,
                      const cv::Ptr<cv::ml::StatModel>& statModel);
-                   
 
    // Go over the image enclosed by sheetLine, detect contours and feed
-   // them to statModel and ocr. Decide on their categorization and
-   // collect outputs in a vector sorted by x coordinate of top left
-   // corners.
-   std::vector<Shape> scanLine(const musicocr::SheetLine& sheetLine,
-                               const cv::Ptr<cv::ml::StatModel>& statModel,
-                               const Scanner& ocr,
-                               const string& processedWindowName,
-                               const string& questionWindowName);
+   // them to statModel and ocr. Decide on their categorization.
+   void scanLine(const musicocr::SheetLine& sheetLine,
+                 const cv::Ptr<cv::ml::StatModel>& statModel,
+                 const Scanner& ocr,
+                 const string& processedWindowName,
+                 const string& questionWindowName);
 
    // 0: no voice connectors found.
    // -1: not determined yet.
@@ -62,6 +59,9 @@ class ShapeFinder {
    // 2: middle of several voices
    // 3: bottom of several voices
    int getVoicePosition() const { return voicePosition; }
+
+   const std::vector<int> getBarPositions() const;
+   const Shape* getBarAt(int x) const;
 
  private:
    ContourConfig config;

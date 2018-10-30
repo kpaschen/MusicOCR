@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include "corners.hpp"
+#include "shapes.hpp"
 #include "structured_page.hpp"
 #include "opencv2/opencv.hpp"
 
