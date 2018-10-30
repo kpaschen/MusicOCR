@@ -86,11 +86,10 @@ void Sheet::createSheetLines(const vector<Rect>& outlines, const Mat& focused) {
     // xxx not sure if this is pulling its weight.
     const float slope = sl.getSlope();
     if (std::abs(slope) >= 0.025) {
-      cout << "rotate by " << (std::abs(slope) * 45.0)
-           << " degrees " << (slope < 0 ? "counterclockwise"
-                              : "clockwise") << endl;
+      //cout << "rotate by " << (std::abs(slope) * 45.0)
+      //     << " degrees " << (slope < 0 ? "counterclockwise"
+      //                        : "clockwise") << endl;
       sl.rotateViewPort(slope);
-      cout << "line finding post-rotation" << endl;
       lines = sl.obtainGridlines();
       sl.accumulateHorizontalLines(lines);
     }
@@ -225,10 +224,10 @@ void SheetLine::accumulateHorizontalLines(const vector<Vec4i>& lines) {
     realMusicLine = false;
     return;
   }
-  cout << "got " << goodLines.size() << " horizontal lines"
-       << " and total height "
-       << goodLines[0][1] << " to " << goodLines.back()[1]
-       << endl;
+  //cout << "got " << goodLines.size() << " horizontal lines"
+  //     << " and total height "
+  //     << goodLines[0][1] << " to " << goodLines.back()[1]
+  //     << endl;
   for (const auto& l : goodLines) {
     horizontalLines.push_back(l);
   }
@@ -261,7 +260,7 @@ float SheetLine::getSlope() const {
   if (totalWidth > 10) {
     averageSlope = totalSlope / totalWidth;
   }
-  cout << "average slope: " << averageSlope << endl;
+  // cout << "average slope: " << averageSlope << endl;
   return averageSlope;
 }
 

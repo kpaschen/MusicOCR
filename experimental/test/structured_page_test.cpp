@@ -7,6 +7,48 @@
 #include "structured_page.hpp"
 #include "opencv2/opencv.hpp"
 
+void initLineCountMap(std::map<std::string, int>& m) {
+  m.emplace("sample1.jpg", 12);
+  m.emplace("DSC_0177.jpg", 12);
+  m.emplace("DSC_0178.jpg", 13);  // fixme
+  m.emplace("DSC_0179.jpg", 4);
+  m.emplace("DSC_0182.jpg", 13);  // fixme
+  m.emplace("DSC_0184.jpg", 8);
+  m.emplace("DSC_0186.jpg", 11);
+  m.emplace("DSC_0130.jpg", 6);
+  m.emplace("DSC_0131.jpg", 6);
+  m.emplace("DSC_0206.jpg", 10);
+  m.emplace("DSC_0207.jpg", 11);
+  m.emplace("DSC_0208.jpg", 8);
+  m.emplace("DSC_0209.jpg", 10);
+  m.emplace("DSC_0212.jpg", 12);
+  m.emplace("DSC_0213.jpg", 10);
+  //m.emplace("DSC_0214.jpg", 8);
+}
+
+TEST(StructuredPageTestSuite, TestLineFinding) {
+  const char *buffer = getcwd(NULL, 0);
+  musicocr::CornerFinder cornerFinder;
+  std::map<std::string, int> expected;
+  initLineCountMap(expected);
+  for (const auto& it : expected) {
+    cv::Mat image, gray, tmp;
+    const std::string test_file =
+    std::string(buffer) + "/test/data/" + it.first;
+    image = cv::imread(test_file);
+    ASSERT_TRUE(image.data != NULL);
+    resize(image, image, cv::Size(), 0.2, 0.2, cv::INTER_AREA);
+    cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
+    cornerFinder.adjust(gray, tmp);
+    musicocr::Sheet sheet;
+    std::vector<cv::Rect> hlines = sheet.find_lines_outlines(tmp);
+    sheet.createSheetLines(hlines, tmp);
+    EXPECT_EQ(sheet.getLineCount(), it.second) << it.first
+              << ": wrong number of lines." << std::endl;
+  }
+}
+
+#if 0
 void initVoiceMap(std::map<std::string, std::vector<int>>& m) {
   m.emplace("sample1.jpg",
     // Should be: all single lines.
@@ -50,8 +92,8 @@ void initVoiceMap(std::map<std::string, std::vector<int>>& m) {
     // std::vector<int>({2, 2, 2, 2}));
   //  std::vector<int>({1, 1, 2, 4, 2, 1}));
 }
-
-#if 0
+// TODO: this needs to be tested as part of global
+// shape finding.
 TEST(StructuredPageTestSuite, TestVoiceGrouping) {
   const char *buffer = getcwd(NULL, 0);
   std::map<std::string, std::vector<int>> expected;
