@@ -10,7 +10,8 @@ using std::string;
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    cerr << "TrainKnn <training data directory> [modelfile basename] [file name pattern]" << endl;
+    cerr << "TrainKnn <training data directory> [modelfile basename] "
+         << " [file name pattern]" << endl;
     return -1;
   }
   const string directory = argv[1];
@@ -32,8 +33,10 @@ int main(int argc, char** argv) {
   }
 
   musicocr::SampleData collector;
+  collector.setPreprocessing(true);
   musicocr::SampleDataFiles files;
-  files.readFiles(directory, filenamepattern, musicocr::TrainingKey::statmodel);
+  // files.readFiles(directory, filenamepattern, musicocr::TrainingKey::statmodel);
+  files.readFiles(directory, filenamepattern, musicocr::TrainingKey::basic);
   files.initCollector(directory, collector);
 
   cout << "read files, now starting training." << endl;

@@ -16,8 +16,18 @@ Mat SampleData::makeSampleMatrix(const Mat& smat, int xcoord, int ycoord) const 
   sizeline[3] = (float)ycoord;
 
   Mat ret;
-  cv::resize(smat, ret, cv::Size(imageSize, imageSize),
-             0, 0, cv::INTER_CUBIC);
+  if (preprocess) {
+    Mat horizontalStructure =  getStructuringElement(cv::MORPH_RECT, cv::Size(10, 1));
+    Mat tmp;
+    dilate(smat, tmp, horizontalStructure, cv::Point(-1, -1));
+    erode(tmp, tmp, horizontalStructure, cv::Point(-1, -1));
+    tmp = smat + ~tmp;
+    threshold(tmp, tmp, 0.0f, 255, 12);
+    tmp = ~tmp;
+    cv::resize(tmp, ret, cv::Size(imageSize, imageSize), 0, 0, cv::INTER_CUBIC);
+  } else {
+    cv::resize(smat, ret, cv::Size(imageSize, imageSize), 0, 0, cv::INTER_CUBIC);
+  }
   ret.convertTo(ret, CV_32F);
   ret.push_back(Mat(sizeline, true).t());
   return ret.reshape(1, 1);

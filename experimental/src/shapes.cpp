@@ -415,6 +415,7 @@ bool ShapeFinder::isShapeInComposite(const Shape& s) const {
 
 void ShapeFinder::scanLine(const SheetLine& sheetLine,
                            const cv::Ptr<cv::ml::StatModel>& statModel,
+                           const cv::Ptr<cv::ml::StatModel>& fineStatModel,
                            const Scanner& ocr,
                            const string& processedWindowName,
                            const string& questionWindowName) {
@@ -453,13 +454,15 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
       default: 
         break;
     }
-    rectangle(cont, r, colour, 2);
+    rectangle(cont, r, colour, 1);
   }
 
   // TODO: scan for notes and note heads, see if they can be
   // put together with complexes that could be accidentals,
   // dots, and connector pieces.
 
+  SampleData sd;
+  // sd.setPreprocessing(true);  // this does not actually help
   const int slHeight = tb.second - tb.first;
   for (auto& shapeAtX : shapes) {
     const int xcoord = shapeAtX.first;
@@ -476,57 +479,22 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
       list[i]->print();
 
       const auto cat = list[i]->getTopLevelCategory();
+      cout << "overall prediction: " << key.getCategoryName(cat) << endl;
 
-      switch (cat) {
-        case TrainingKey::TopLevelCategory::round:
-          {
-            if (r.area() > 50) {
-              // note heads are generally at least this size.
-              // they can be outside the core area.
-              cout << "size says note head" << endl;
-              list[i]->updateBelief(TrainingKey::Category::notehead, 1);
-            }
-            if (insideInnerRect.area() == 0) {
-                if (nbcount == 0 && r.area() <= 50) {
-                // outside the core area and small and isolated -> probably a speck
-                list[i]->updateBelief(TrainingKey::Category::speck, 2);  
-              } else {
-                // Does have neighbours, don't skip it yet.
-                list[i]->updateBelief(TrainingKey::Category::piece, 1);  
-              }
-            }   
-            // increase piece likelihood if this is inside another item.
-            const auto& neighbours = list[i]->getNeighbours();
-            if (neighbours.find(Shape::Neighbourhood::AROUND)
-                  != neighbours.end()) {
-              list[i]->updateBelief(TrainingKey::Category::piece, 1);  
-              cout << "inside another item, probably a piece" << endl;
-            }
-            auto x = list[i]->getMostLikelyCategory();
-            if (x == TrainingKey::Category::speck) colour = Scalar(127, 127, 127);
-          }
-          break;
-        case TrainingKey::TopLevelCategory::vline:
-        {
-          if (insideInnerRect.area() == 0) {
-              if (nbcount == 0 && r.area() <= 50) {
-              // outside the core area and small and isolated -> probably a speck
-              list[i]->updateBelief(TrainingKey::Category::speck, 2);  
-            } else {
-              // Does have neighbours, don't skip it yet.
-              list[i]->updateBelief(TrainingKey::Category::piece, 1);  
-            }
-          }   
-        }
-        break;
-        default: break;
-      }
+      if (fineStatModel && fineStatModel->isTrained()) {
+        Mat partial = Mat(viewPort, r);
+        cv::Mat sample = sd.makeSampleMatrix(partial, r.tl().x, r.tl().y);
+        float prediction = fineStatModel->predict(sample);
+        const TrainingKey::Category cat2 =
+            static_cast<TrainingKey::Category>((int)prediction);
+        cout << "fine model prediction: " << key.getCategoryName(cat2) << endl;
+      } 
 
       // Decide whether to display this or skip it.
-      if (isShapeInComposite(*list[i])) continue;
-      if (list[i]->getMostLikelyCategory() == TrainingKey::Category::speck) {
-        continue;
-      }
+      //if (isShapeInComposite(*list[i])) continue;
+      //if (list[i]->getMostLikelyCategory() == TrainingKey::Category::speck) {
+      //  continue;
+      // }
 
       rectangle(cont, r, colour, 2);
       imshow(processedWindowName, cont);
@@ -536,8 +504,6 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
       //resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
       //imshow(questionWindowName, scaleup);
 
-      // TODO: send prep into stat model?
-      //waitKey(0);
       Mat prep = preprocess(partial);
       resize(prep, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
       imshow(questionWindowName, scaleup);

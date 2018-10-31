@@ -15,11 +15,12 @@ namespace musicocr {
 // and response matrices out of this.
 class SampleData {
   public:
-
     cv::Mat makeSampleMatrix(const cv::Mat&, int xcoord, int ycoord) const;
 
     // Add one image and corresponding label.
     void addTrainingData(const cv::Mat&, int label, int xcoord, int ycoord);
+
+    void setPreprocessing(bool prep) { preprocess = prep; }
 
     bool isReadyToTrain() const;
     bool isReadyToRun() const;
@@ -48,6 +49,9 @@ class SampleData {
   private:
     // All images will be resized to this width and height.
     static const int imageSize = 20;
+
+    // Preprocessing on/off
+    bool preprocess;
 
     // accumulate features and labels in these internally.
     cv::Mat features, labels;

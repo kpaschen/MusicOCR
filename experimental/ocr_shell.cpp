@@ -24,6 +24,7 @@ using namespace std;
 Mat gray, focused, processed, cdst;
 musicocr::Sheet sheet;
 cv::Ptr<cv::ml::StatModel> statModel;
+cv::Ptr<cv::ml::StatModel> fineStatModel;
 
 string filename;
 
@@ -153,7 +154,7 @@ void scanImage();
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-   cerr << "OcrShell <Path to Image> [<model file name>]";
+   cerr << "OcrShell <Path to Image> [<model file name>] [<fine model file name>]";
    return -1; 
   }
   filename = argv[1];
@@ -196,6 +197,35 @@ int main(int argc, char** argv) {
       else {
         cerr << "Unrecognised model type in file " << modelfile
              << ", not loading a model." << endl;
+      }
+    }
+  }
+  if (argc > 3) {
+    const string& modelfile = argv[3];
+    // We need the type of the model because statmodel::load
+    // is templatized.
+    char modeltype[20];
+    char trainingset[100];
+    int x = musicocr::SampleDataFiles::parseModelFileName(
+      modelfile, trainingset, modeltype);
+    if (x != 2) {
+      cerr << "Unrecognised model type in file " << modelfile
+           << ", not loading a fine model." << endl;
+    } else {
+      cout << "model type: " << modeltype << endl;
+      if (strcmp(modeltype, "knn") == 0) {
+        fineStatModel = cv::ml::StatModel::load<cv::ml::KNearest>(modelfile);
+        cout << "loaded knn model" << endl;
+      } else if (strcmp(modeltype, "svm") == 0) {
+        fineStatModel = cv::ml::StatModel::load<cv::ml::SVM>(modelfile);
+        cout << "loaded svm model" << endl;
+      } else if (strcmp(modeltype, "dtrees") == 0){
+        fineStatModel = cv::ml::StatModel::load<cv::ml::DTrees>(modelfile);
+        cout << "loaded dtree model" << endl;
+      }
+      else {
+        cerr << "Unrecognised model type in file " << modelfile
+             << ", not loading a fine model." << endl;
       }
     }
   }
@@ -349,17 +379,6 @@ void scanImage() {
            Scalar(0, 0, 127), 1);
       rectangle(cdst, sr, Scalar(0, 200, 0), 1);
     }
-#if 0
-    const std::vector<int> bp = sf->getBarPositions();
-    for (size_t i = 0; i < bp.size(); i++) {
-      const musicocr::Shape* s = sf->getBarAt(bp[i]);
-      const cv::Rect& sr = s->getRectangle() + bb.tl();
-      const int middleX = sr.tl().x + (sr.br().x - sr.tl().x) / 2;
-      line(cdst, cv::Point(middleX, bltop), cv::Point(middleX, blbottom),
-           Scalar(0, 0, 127), 1);
-      rectangle(cdst, sr, Scalar(0, 200, 0), 1);
-    }
-#endif
   }
   imshow("Processed", cdst);
 }
@@ -438,6 +457,10 @@ void navigateSheet() {
             break;
           }
           auto& sheetLine = sheet.getNthLine(lineIndex);
+          if (!sheetLine.isRealMusicLine()) {
+            cerr << "Could not recognise this as a music line." << endl;
+            break;
+          }
           if (!sheetLine.hasShapeFinder()) {
             musicocr::ContourConfig config;
             makeContourConfig(&config);
@@ -446,7 +469,7 @@ void navigateSheet() {
           }
  
           musicocr::Scanner scanner;
-          sheetLine.getShapeFinder().scanLine(sheetLine, statModel, scanner,
+          sheetLine.getShapeFinder().scanLine(sheetLine, statModel, fineStatModel, scanner,
             "Processed", "What is this?");
         }
       break;

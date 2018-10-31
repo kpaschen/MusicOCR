@@ -89,6 +89,7 @@ class ShapeFinder {
    // them to statModel and ocr. Decide on their categorization.
    void scanLine(const musicocr::SheetLine& sheetLine,
                  const cv::Ptr<cv::ml::StatModel>& statModel,
+                 const cv::Ptr<cv::ml::StatModel>& fineStatModel,
                  const Scanner& ocr,
                  const string& processedWindowName,
                  const string& questionWindowName);
