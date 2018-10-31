@@ -29,6 +29,46 @@ struct ContourConfig {
 
 class Shape;
 
+class CompositeShape {
+  public:
+    // Unknown: default initial state
+    // Note: note head plus optional head, dot, accidentals, expressive marks
+    //   -- expressive marks and connectors can link multiple notes
+    //   -- together into a NOTEGROUP.
+    //   -- chords are notegroups
+    //   -- breaks are notes
+    // Linestart: combination of bar line, clef, time, accidentals usually
+    //     found at start of piece (but may also occur in middle).
+    // Barline: single or double line, long or short, possibly including
+    //   repeat marks.
+    // Other: unidentified item within the inner box (could be e.g. 'A7' or similar, 
+    //    or just an item that wasn't parsed properly).
+    // Outofline: outside the inner box and unidentified (not clearly a note head
+    //   or vertical line, possibly writing or piece of adjacent line).
+    
+    // Not sure if maybe note and notegroup should be one type?
+    enum CompositeType {
+      UNKNOWN, NOTE, NOTEGROUP, LINESTART, BARLINE, OTHER, OUTOFLINE
+    };
+
+    // Does not take ownership of Shape.
+    CompositeShape(CompositeType, Shape*);
+
+    // Does not take ownership of Shape.
+    void addShape(Shape*);
+
+    const cv::Rect& getRectangle() const { return boundingBox; }
+    CompositeType getType() const { return type; }
+
+  private:
+    // Each shape has its position (rectangle) and neighbours list.
+    std::vector<Shape *> shapes;
+
+    // Box containing all the shapes.
+    cv::Rect boundingBox;
+    CompositeType type;
+};
+
 class ShapeFinder {
  public:
    ShapeFinder(const ContourConfig& c) : config(c) {}
@@ -60,8 +100,12 @@ class ShapeFinder {
    // 3: bottom of several voices
    int getVoicePosition() const { return voicePosition; }
 
-   const std::vector<int> getBarPositions() const;
-   const Shape* getBarAt(int x) const;
+   std::unique_ptr<CompositeShape>&
+     addCompositeShape(CompositeShape::CompositeType, Shape*);
+
+   const std::vector<std::unique_ptr<CompositeShape>>& getComposites() const {
+     return compositeShapes;
+   }
 
  private:
    ContourConfig config;
@@ -72,12 +116,15 @@ class ShapeFinder {
    // this horizontal value as their tl().x.
    std::map<int, std::vector<std::unique_ptr<Shape>>> shapes;
 
-   // bar lines by x coordinate.
-   std::map<int, Shape*> barLines;
+   // All composite shapes (including bar lines)
+   std::vector<std::unique_ptr<CompositeShape>> compositeShapes;
 
    cv::Mat preprocess(const Mat& img);
 
    int voicePosition = -1;
+
+   // Returns true if s is part of a composite, false otherwise.
+   bool isShapeInComposite(const Shape& s) const;
 
    // Initialise shapes based on rectangles:
    // create shapes with top-level categories and discover
@@ -89,6 +136,12 @@ class ShapeFinder {
    void scanForBarLines(const cv::Mat& viewPort,
                         const cv::Rect& relativeInnerBox,
                         const std::pair<int, int>& slCoords); 
+
+   // look for items that are probably writing between lines or that belong
+   // to another sheetline.
+   void scanForDiscards(const cv::Rect& relativeInnerBox);
+   void scanForNotes(const cv::Rect& relativeInnerBox);
+   void scanStartOfLine(const cv::Rect& relativeInnerBox);
 };
 
 class Shape {
@@ -97,6 +150,8 @@ class Shape {
 
    void print() const;
 
+   // This is the rectangle where the shape is located relative to
+   // the enclosing sheet line's bounding box.
    const Rect& getRectangle() const { return rectangle; }
 
    void updateBelief(TrainingKey::Category, int diff);

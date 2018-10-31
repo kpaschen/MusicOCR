@@ -337,6 +337,19 @@ void scanImage() {
     }
     previousVoicePosition = voicePosition;
 
+    const std::vector<std::unique_ptr<musicocr::CompositeShape>>&
+      composites = sf->getComposites();
+    for (const auto& c : composites) {
+      if (c->getType() != musicocr::CompositeShape::CompositeType::BARLINE) {
+        continue;
+      }
+      const cv::Rect& sr = c->getRectangle() + bb.tl();
+      const int middleX = sr.tl().x + (sr.br().x - sr.tl().x) / 2;
+      line(cdst, cv::Point(middleX, bltop), cv::Point(middleX, blbottom),
+           Scalar(0, 0, 127), 1);
+      rectangle(cdst, sr, Scalar(0, 200, 0), 1);
+    }
+#if 0
     const std::vector<int> bp = sf->getBarPositions();
     for (size_t i = 0; i < bp.size(); i++) {
       const musicocr::Shape* s = sf->getBarAt(bp[i]);
@@ -346,6 +359,7 @@ void scanImage() {
            Scalar(0, 0, 127), 1);
       rectangle(cdst, sr, Scalar(0, 200, 0), 1);
     }
+#endif
   }
   imshow("Processed", cdst);
 }
@@ -429,12 +443,11 @@ void navigateSheet() {
             makeContourConfig(&config);
             musicocr::ShapeFinder* sf = new musicocr::ShapeFinder(config);
             sheetLine.setShapeFinder(sf);
-            sf->initLineScan(sheetLine, statModel);
           }
  
           musicocr::Scanner scanner;
-          sheetLine.getShapeFinder().scanLine(sheetLine, statModel, scanner, "Processed",
-            "What is this?");
+          sheetLine.getShapeFinder().scanLine(sheetLine, statModel, scanner,
+            "Processed", "What is this?");
         }
       break;
       case 'q': 

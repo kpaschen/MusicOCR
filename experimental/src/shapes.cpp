@@ -92,18 +92,6 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
   const int topEdge = relativeInnerBox.tl().y;
   const int bottomEdge = relativeInnerBox.br().y;
 
-  // TODO: put this in a dedicated beginning-of-line scanner.
-  // First, look for the left-most bar line, if any.
-  // A line can start in several different ways:
-  // - bar line followed by notes
-  // - bar line followed by clef, then notes 
-  // - just a clef followed by notes
-  // 'notes' can include time (e.g. "4/4", accidentals) 
-  // if there is no bar line at the start, then either there is
-  // an implied bar line at the beginning, or there will be one
-  // (possibly a double line with repeat signs, etc) just before the
-  // actual music notes begin.
-
   // First, look for voice connectors (long bar lines).
   map<int, int> positions;
   bool haveFirstVline = false;
@@ -160,6 +148,8 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
   }
   voicePosition = maxPos;
 
+  std::map<int, Shape*> barLines;
+
   if (voicePosition > 0) {
     for (auto& siter : shapes) {
       const int xcoord = siter.first;
@@ -176,8 +166,7 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
         }
       }
     }
-    return;
-  }
+  } else {
 
   // Is this a single voice line? Then we don't have any bar lines yet.
   haveFirstVline = false;
@@ -321,6 +310,12 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
     s->print();
     barLines.erase(i);
   }
+  }  // end of the 'else' case. below code gets executed for both
+     // long and short bar lines.
+  for (const auto& bl : barLines) {
+    unique_ptr<CompositeShape>& composite = addCompositeShape(
+        CompositeShape::CompositeType::BARLINE, bl.second);
+  }
 }
 
 void ShapeFinder::initLineScan(const SheetLine& sheetLine,
@@ -331,24 +326,91 @@ void ShapeFinder::initLineScan(const SheetLine& sheetLine,
   const std::pair<int, int> tb = sheetLine.getCoordinates();
   const Rect relative = sheetLine.getInnerBox() - sheetLine.getBoundingBox().tl();
   scanForBarLines(viewPort, relative, tb);
-  cout << "voice position: " << voicePosition << endl;
 }
 
-const std::vector<int> ShapeFinder::getBarPositions() const {
-  std::vector<int> ret;
-  for (const auto& bl : barLines) {
-    ret.emplace_back(bl.first);
+void ShapeFinder::scanForNotes(const Rect& relativeInnerBox) {
+  // look for note heads as the 'seeds' of these composites.
+  // TODO: also look for composite of the right shape (then
+  // skip the note neck)
+
+  // then look for dots to the right, note necks above/below
+  // accidentals to the left
+  // possibly connector lines, expressive marks above/below
+  for (auto& siter : shapes) {
+    if (siter.first < (relativeInnerBox.tl().x - 2)) continue;
+    vector<std::unique_ptr<Shape>>& list = siter.second;
+    for (size_t i = 0; i < list.size(); i++) {
+      if (isShapeInComposite(*list[i])) continue;
+      // Is this item inside another one?
+      // xxx 
+      const auto cat = list[i]->getTopLevelCategory();
+      if (cat == TrainingKey::TopLevelCategory::round &&
+          list[i]->getRectangle().area() >= 50) {
+        // Best signal for a note head
+        // TODO either merge the note and notegroup types or 
+        // make sure to test for chords here (but most chords
+        // would show up as something other than 'round' anyhow).
+        std::unique_ptr<CompositeShape>& comp = addCompositeShape(
+          CompositeShape::CompositeType::NOTE, list[i].get()); 
+      }
+    }
   }
-  return ret;
 }
 
-const Shape* ShapeFinder::getBarAt(int x) const {
-  const auto& b = barLines.find(x);
-  if (b == barLines.end()) {
-    cerr << "no bar line exists at position " << x << endl;
-    return NULL;
+void ShapeFinder::scanForDiscards(const Rect& relativeInnerBox) {
+  
+}
+
+void ShapeFinder::scanStartOfLine(const Rect& relativeInnerBox) {
+  // A line can start in several different ways:
+  // - optional bar line
+  // - optional clef, optionally followed by time and accidentals
+  // if there is no bar line at the start, then either there is
+  // an implied bar line at the beginning, or there will be one
+  // (possibly a double line with repeat signs, etc) just before the
+  // actual music notes begin.
+
+  // This method should be called after bar lines have been identified.
+
+  // 'state machine': 
+  // -1: starting state
+  // 1: have found bar line
+  // 2: have found potential clef
+  // 3: have found clef followed by complex that could be time
+  // 4: have found things followed by complex that could be accidentals
+  // 5: have found things followed by complex that could be wide bar line
+  int state = -1;
+  for (const auto& siter : shapes) {
+    // skip items before left edge of bounding box
+    if (siter.first < (relativeInnerBox.tl().x - 2)) continue;
+    // Arbitrary: 'start' of line does not go farther than this.
+    // TODO: this needs to be fixed for in-between changes in clef etc.
+    if (siter.first >= 100) return;
+    // Finding a note head signals we're past the start of line.
+    const vector<std::unique_ptr<Shape>>& list = siter.second;
+    for (size_t i = 0; i < list.size(); i++) {
+      const auto cat = list[i]->getTopLevelCategory();
+      if (cat == TrainingKey::TopLevelCategory::round &&
+          list[i]->getRectangle().area() >= 50) {
+        return;
+      }
+      // TODO: need to train ocr or cascade to recognise clefs
+      // For now, look for things that are 'complex' and the right size.
+      if (cat == TrainingKey::TopLevelCategory::composite) {
+        cout << "composite found at " << siter.first
+             << "with size " << list[i]->getRectangle() << endl;
+      }
+    }
   }
-  return b->second; 
+}
+
+bool ShapeFinder::isShapeInComposite(const Shape& s) const {
+  const Rect& r = s.getRectangle();
+  for (const auto& comp : compositeShapes) {
+    const Rect& r2 = comp->getRectangle();
+    if ((r & r2) == r) return true;
+  }
+  return false;
 }
 
 void ShapeFinder::scanLine(const SheetLine& sheetLine,
@@ -360,6 +422,7 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
   if (voicePosition == -1) {
     initLineScan(sheetLine, statModel);
   }
+  cout << "voice position: " << voicePosition << endl;
   Mat viewPort = sheetLine.getViewPort().clone();
 
   Mat cont;
@@ -367,6 +430,8 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
 
   const Rect relative = sheetLine.getInnerBox() - sheetLine.getBoundingBox().tl();
   rectangle(cont, relative, Scalar(127, 0, 0), 1);
+  scanStartOfLine(relative);
+  scanForNotes(relative);
 
   const std::pair<int, int> tb = sheetLine.getCoordinates();
   line(cont, Point(0, tb.first), Point(cont.cols, tb.first),
@@ -376,10 +441,18 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
   TrainingKey key;
 
   Scalar colour(0, 0, 127);
-  colour = Scalar(127, 0, 0);
-  for (const auto& bl: barLines) {
-    const Shape *s = bl.second;
-    const Rect& r = s->getRectangle();
+  for (const auto& cm : compositeShapes) {
+    const Rect& r = cm->getRectangle();
+    switch(cm->getType()) {
+      case CompositeShape::CompositeType::BARLINE:
+        colour = Scalar(127, 0, 0); 
+        break;
+      case CompositeShape::CompositeType::NOTE:
+        colour = Scalar(0, 127, 0); 
+        break;
+      default: 
+        break;
+    }
     rectangle(cont, r, colour, 2);
   }
 
@@ -450,12 +523,7 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
       }
 
       // Decide whether to display this or skip it.
-      if (list[i]->getMostLikelyCategory() == TrainingKey::Category::bar) {
-        if (list[i]->getTopLevelCategory() == TrainingKey::TopLevelCategory::vline) {
-          // straightforward bar line, skip it.
-          continue;
-        }
-      }
+      if (isShapeInComposite(*list[i])) continue;
       if (list[i]->getMostLikelyCategory() == TrainingKey::Category::speck) {
         continue;
       }
@@ -497,6 +565,72 @@ Mat ShapeFinder::preprocess(const Mat& img) {
   return tmp;
 }
 
+std::unique_ptr<CompositeShape>&
+   ShapeFinder::addCompositeShape(
+     CompositeShape::CompositeType type, Shape* shape) {
+  CompositeShape* composite = new CompositeShape(type, shape);
+  // Add some neighbours of shape to composite.
+  const map<Shape::Neighbourhood, vector<Shape*>>& nb = shape->getNeighbours();
+  for (const auto& nbiter : nb) {
+    if (type == CompositeShape::CompositeType::BARLINE) {
+       // Skip 'E' and 'W' neighbours for bar line types.
+       if (nbiter.first == Shape::Neighbourhood::E ||
+           nbiter.first == Shape::Neighbourhood::W) continue;
+       for (const auto& s : nbiter.second) {
+         const auto cat = s->getTopLevelCategory();
+         if (cat != TrainingKey::TopLevelCategory::round &&
+             cat != TrainingKey::TopLevelCategory::vline) continue;
+         composite->addShape(s);
+       }
+    } else if (type == CompositeShape::CompositeType::NOTE) {
+      // add 'complex' if it's to the left (accidental)
+      // add 'dot' if it's to the right
+      // add connector lines and verticals if they're above/below
+      for (const auto& s : nbiter.second) {
+        const auto cat = s->getTopLevelCategory();
+        switch(cat) {
+          case TrainingKey::TopLevelCategory::round:
+            cout << "neighbour of size " << s->getRectangle().area()
+                 << " in direction " << nbiter.first << endl;
+            if (s->getRectangle().area() < 12 &&
+                (nbiter.first == Shape::Neighbourhood::E ||
+                 nbiter.first == Shape::Neighbourhood::SE)) {
+              composite->addShape(s);
+            }
+          break;
+          case TrainingKey::TopLevelCategory::composite:
+            cout << "composite neighbour of size " << s->getRectangle().area()
+                 << " in direction " << nbiter.first << endl;
+            if (nbiter.first == Shape::Neighbourhood::W ||
+                nbiter.first == Shape::Neighbourhood::SW ||
+                nbiter.first == Shape::Neighbourhood::NW) {
+              composite->addShape(s);
+            }
+            break;
+          case TrainingKey::TopLevelCategory::hline:
+            cout << "connector neighbour of size " << s->getRectangle().area()
+                 << " in direction " << nbiter.first << endl;
+            if (nbiter.first == Shape::Neighbourhood::N ||
+                nbiter.first == Shape::Neighbourhood::S ||
+                nbiter.first == Shape::Neighbourhood::SE ||
+                nbiter.first == Shape::Neighbourhood::SW ||
+                nbiter.first == Shape::Neighbourhood::NW ||
+                nbiter.first == Shape::Neighbourhood::NE) {
+              composite->addShape(s);
+            }
+            break;
+           default: break;
+        }
+      }
+    } else {  // default: add all neighbours.
+       for (const auto& s : nbiter.second) {
+         composite->addShape(s);
+       }
+    }
+  }
+  compositeShapes.emplace_back(composite);
+  return compositeShapes.back();
+}
 
 void ShapeFinder::getTrainingDataForLine(const Mat& focused, 
   const string& processedWindowName,
@@ -547,6 +681,17 @@ void ShapeFinder::getTrainingDataForLine(const Mat& focused,
     }
   }
   cout << "Done with this line." << endl;
+}
+
+CompositeShape::CompositeShape(CompositeShape::CompositeType type,
+                               Shape* shape) : type(type) {
+  shapes.push_back(shape); 
+  boundingBox = shape->getRectangle();
+}
+
+void CompositeShape::addShape(Shape* shape) {
+  shapes.push_back(shape);
+  boundingBox |= shape->getRectangle();
 }
 
 Shape::Shape(const cv::Rect& rect) {
