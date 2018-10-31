@@ -33,10 +33,9 @@ int main(int argc, char** argv) {
   }
 
   musicocr::SampleData collector;
-  collector.setPreprocessing(true);
   musicocr::SampleDataFiles files;
-  // files.readFiles(directory, filenamepattern, musicocr::TrainingKey::statmodel);
-  files.readFiles(directory, filenamepattern, musicocr::TrainingKey::basic);
+  files.readFiles(directory, filenamepattern, musicocr::TrainingKey::statmodel);
+  //files.readFiles(directory, filenamepattern, musicocr::TrainingKey::basic);
   files.initCollector(directory, collector);
 
   cout << "read files, now starting training." << endl;

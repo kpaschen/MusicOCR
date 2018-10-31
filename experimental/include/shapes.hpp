@@ -83,7 +83,8 @@ class ShapeFinder {
    const std::vector<cv::Rect>& getContourBoxes(const Mat& focused);
 
    void initLineScan(const musicocr::SheetLine& sheetLine,
-                     const cv::Ptr<cv::ml::StatModel>& statModel);
+                     const cv::Ptr<cv::ml::StatModel>& statModel,
+                     const cv::Ptr<cv::ml::StatModel>& fineStatModel);
 
    // Go over the image enclosed by sheetLine, detect contours and feed
    // them to statModel and ocr. Decide on their categorization.
@@ -132,7 +133,8 @@ class ShapeFinder {
    // neighbourhood relations.
    void firstPass(const std::vector<cv::Rect>& rectangles,
                   const cv::Mat& viewPort,
-                  const cv::Ptr<cv::ml::StatModel>& statModel);
+                  const cv::Ptr<cv::ml::StatModel>& statModel,
+                  const cv::Ptr<cv::ml::StatModel>& fineStatModel);
 
    void scanForBarLines(const cv::Mat& viewPort,
                         const cv::Rect& relativeInnerBox,
@@ -155,6 +157,7 @@ class Shape {
    // the enclosing sheet line's bounding box.
    const Rect& getRectangle() const { return rectangle; }
 
+   // TODO not sure if this is good enough
    void updateBelief(TrainingKey::Category, int diff);
 
    // Get the category with the strongest belief. Ties
@@ -171,6 +174,9 @@ class Shape {
    TrainingKey::TopLevelCategory getTopLevelCategory() const {
      return topLevelCategory;
    }
+
+   void setCategory(TrainingKey::Category cat) { category = cat; }
+   TrainingKey::Category getCategory() const { return category; }
 
    // compass directions plus inside/outside
    enum Neighbourhood {
@@ -199,6 +205,8 @@ class Shape {
 
    // This is the category returned by the stat model.
    TrainingKey::TopLevelCategory topLevelCategory;
+   // This is the category returned by the fine stat model.
+   TrainingKey::Category category;
 
    // Does not take ownership of shapes.
    std::map<Neighbourhood, std::vector<Shape*>> neighboursByDirection;

@@ -332,7 +332,7 @@ void scanImage() {
 
     musicocr::ShapeFinder* sf = new musicocr::ShapeFinder(config);
     sl.setShapeFinder(sf);
-    sf->initLineScan(sl, statModel);  // TODO: move this to setShapeFinder?
+    sf->initLineScan(sl, statModel, fineStatModel);
 
     int voicePosition = sf->getVoicePosition();
     cout << "line " << i << " has voice position " << voicePosition << endl;

@@ -48,7 +48,8 @@ const std::vector<cv::Rect>& ShapeFinder::getContourBoxes(const Mat& focused) {
 
 void ShapeFinder::firstPass(const std::vector<cv::Rect>& rectangles,
                             const cv::Mat& viewPort,
-                            const cv::Ptr<cv::ml::StatModel>& statModel) {
+                            const cv::Ptr<cv::ml::StatModel>& statModel,
+                            const cv::Ptr<cv::ml::StatModel>& fineStatModel) {
   SampleData sd;
   TrainingKey key;
   for (const auto& rect : rectangles) {
@@ -60,6 +61,12 @@ void ShapeFinder::firstPass(const std::vector<cv::Rect>& rectangles,
         static_cast<TrainingKey::TopLevelCategory>((int)prediction);
     Shape *shape = new Shape(rect);
     shape->setTopLevelCategory(cat);
+    if (fineStatModel && fineStatModel->isTrained()) {
+      float prediction2 = fineStatModel->predict(sample);
+      const TrainingKey::Category cat2 =
+          static_cast<TrainingKey::Category>((int)prediction2);
+      shape->setCategory(cat2);
+    } 
     // Go over known shapes and add this one to their neighbour lists.
     // There is nothing there yet to the right of this rectangle, so only
     // need to look at whether things' left or right edge is near this
@@ -101,9 +108,13 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
     for (size_t i = 0; i < list.size(); i++) {
       const Rect& r = list[i]->getRectangle();
       const auto cat = list[i]->getTopLevelCategory();
+      const auto fcat = list[i]->getCategory();
       const int height = r.br().y - r.tl().y;
       bool processThis = false;
-      if (cat == TrainingKey::TopLevelCategory::composite) {
+      if (fcat == TrainingKey::Category::vertical) {
+        processThis = true;
+        haveFirstVline = true;
+      } else if (cat == TrainingKey::TopLevelCategory::composite) {
         const int width = r.br().x - r.tl().x;
         if (height / width >= 3) {
           // probably a vertical line. other vertical lines can be included
@@ -113,8 +124,7 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
           processThis = true;
         }
         haveFirstVline = true;
-      }
-      else if (cat == TrainingKey::TopLevelCategory::vline) {
+      } else if (cat == TrainingKey::TopLevelCategory::vline) {
         processThis = true;
         haveFirstVline = true;
       }
@@ -159,10 +169,10 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
       for (size_t i = 0; i < list.size(); i++) {
         const auto cat = list[i]->getTopLevelCategory();
         if (cat == TrainingKey::TopLevelCategory::vline ||
-            cat == TrainingKey::TopLevelCategory::composite) {
+            cat == TrainingKey::TopLevelCategory::composite ||
+            list[i]->getCategory() == TrainingKey::Category::vertical) {
           cout << "adding bar line at " << xcoord << endl;
           barLines.emplace(xcoord, list[i].get());
-          list[i]->updateBelief(TrainingKey::Category::bar, 10);
         }
       }
     }
@@ -178,7 +188,8 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
     for (size_t i = 0; i < list.size(); i++) {
       const auto cat = list[i]->getTopLevelCategory();
       if (cat == TrainingKey::TopLevelCategory::vline || 
-          cat == TrainingKey::TopLevelCategory::composite) {
+          cat == TrainingKey::TopLevelCategory::composite ||
+          list[i]->getCategory() == TrainingKey::Category::vertical) {
         lastXCoord = cr->first;
         break;
       }
@@ -193,7 +204,8 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
     for (size_t i = 0; i < list.size(); i++) {
       const auto cat = list[i]->getTopLevelCategory();
       if (cat != TrainingKey::TopLevelCategory::vline &&
-          cat != TrainingKey::TopLevelCategory::composite) continue;
+          cat != TrainingKey::TopLevelCategory::composite && 
+          list[i]->getCategory() != TrainingKey::Category::vertical) continue;
       const Rect& r = list[i]->getRectangle();
       const Rect insideInnerRect = r & relativeInnerBox;
    
@@ -204,7 +216,6 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
       if (xcoord == lastXCoord) {
 //        cout << "end of line barline at " << xcoord << endl;
         barLines.emplace(xcoord, list[i].get());
-        list[i]->updateBelief(TrainingKey::Category::bar, 10);
         break;
       }
 
@@ -227,7 +238,8 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
             if (area == 0) { continue; }
             const auto cat2 = sh->getTopLevelCategory();
             if (cat2 == TrainingKey::TopLevelCategory::vline ||
-                  cat2 == TrainingKey::TopLevelCategory::composite) {
+                cat2 == TrainingKey::TopLevelCategory::composite ||
+                sh->getCategory() == TrainingKey::Category::vertical) {
               isFirstVline = false;
               break;
             }
@@ -238,7 +250,6 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
         if (isFirstVline) {
           //cout << "beginning of line barline: " << xcoord << endl;
           barLines.emplace(xcoord, list[i].get());
-          list[i]->updateBelief(TrainingKey::Category::bar, 10);
           haveFirstVline = true;
           continue;
         }
@@ -273,7 +284,6 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
       // Still here? Then it's probably a bar line.
       //cout << "conditions met for barline: " << xcoord << endl;
       barLines.emplace(xcoord, list[i].get());
-      list[i]->updateBelief(TrainingKey::Category::bar, 10);
     }
   }
   // Thin out the bar lines. Assume the first bar line is correct
@@ -306,7 +316,6 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
   for (int i : droplist) {
     cout << "dropping entry at " << i << endl; 
     Shape* s = barLines.find(i)->second;
-    s->updateBelief(TrainingKey::Category::bar, -10);
     s->print();
     barLines.erase(i);
   }
@@ -319,23 +328,26 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
 }
 
 void ShapeFinder::initLineScan(const SheetLine& sheetLine,
-                               const cv::Ptr<cv::ml::StatModel>& statModel) {
+                               const cv::Ptr<cv::ml::StatModel>& statModel,
+                               const cv::Ptr<cv::ml::StatModel>& fineStatModel) {
   Mat viewPort = sheetLine.getViewPort().clone();
   const vector<Rect>& rectangles = getContourBoxes(viewPort); 
-  firstPass(rectangles, viewPort, statModel);
+  firstPass(rectangles, viewPort, statModel, fineStatModel);
   const std::pair<int, int> tb = sheetLine.getCoordinates();
   const Rect relative = sheetLine.getInnerBox() - sheetLine.getBoundingBox().tl();
   scanForBarLines(viewPort, relative, tb);
 }
 
 void ShapeFinder::scanForNotes(const Rect& relativeInnerBox) {
-  // look for note heads as the 'seeds' of these composites.
-  // TODO: also look for composite of the right shape (then
-  // skip the note neck)
 
-  // then look for dots to the right, note necks above/below
-  // accidentals to the left
-  // possibly connector lines, expressive marks above/below
+  // the fine model (dtrees) is pretty good at detecting note heads.
+  // when it says 'quarter break', there's a good chance it's actually
+  // a note neck.
+  // when it says 'note' it could be a note neck or a note. 
+  // when it says 'sharp', it's probably correct
+  // when it says 'bass clef', it's probably wrong
+  // when it says 'flat', it could be a sharp or a note head instead.
+
   for (auto& siter : shapes) {
     if (siter.first < (relativeInnerBox.tl().x - 2)) continue;
     vector<std::unique_ptr<Shape>>& list = siter.second;
@@ -343,13 +355,15 @@ void ShapeFinder::scanForNotes(const Rect& relativeInnerBox) {
       if (isShapeInComposite(*list[i])) continue;
       // Is this item inside another one?
       // xxx 
-      const auto cat = list[i]->getTopLevelCategory();
-      if (cat == TrainingKey::TopLevelCategory::round &&
-          list[i]->getRectangle().area() >= 50) {
-        // Best signal for a note head
-        // TODO either merge the note and notegroup types or 
-        // make sure to test for chords here (but most chords
-        // would show up as something other than 'round' anyhow).
+      const auto cat = list[i]->getCategory();
+      if (cat == TrainingKey::Category::notehead ||
+          cat == TrainingKey::Category::note) {
+        // This will add potential neighbours, but there can be
+        // relevant items that aren't caught by neighbourhood relations.
+        // TODO look a little further.
+        // look for dots to the right, note necks above/below
+        // accidentals to the left
+        // possibly connector lines, expressive marks above/below
         std::unique_ptr<CompositeShape>& comp = addCompositeShape(
           CompositeShape::CompositeType::NOTE, list[i].get()); 
       }
@@ -358,7 +372,29 @@ void ShapeFinder::scanForNotes(const Rect& relativeInnerBox) {
 }
 
 void ShapeFinder::scanForDiscards(const Rect& relativeInnerBox) {
-  
+  for (auto& siter : shapes) {
+    vector<std::unique_ptr<Shape>>& list = siter.second;
+    for (size_t i = 0; i < list.size(); i++) {
+      if (isShapeInComposite(*list[i])) continue;
+      // Is it outside the inner box?
+      if ((list[i]->getRectangle() & relativeInnerBox).area() != 0) continue;
+      // Are any of its neighbours inside the inner box?
+      bool foundInsideNeighbour = false;
+      for (const auto& nb : list[i]->getNeighbours()) {
+        const vector<Shape*>& sp = nb.second;
+        for (size_t j = 0; j < sp.size(); j++) {
+          if ((sp[j]->getRectangle() & relativeInnerBox).area() != 0) {
+            foundInsideNeighbour = true;
+            break;
+          }
+        }
+        if (foundInsideNeighbour) break;
+      }
+      if (foundInsideNeighbour) continue;
+      std::unique_ptr<CompositeShape>& comp = addCompositeShape(
+        CompositeShape::CompositeType::OUTOFLINE, list[i].get()); 
+    }
+  }
 }
 
 void ShapeFinder::scanStartOfLine(const Rect& relativeInnerBox) {
@@ -421,7 +457,7 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
                            const string& questionWindowName) {
 
   if (voicePosition == -1) {
-    initLineScan(sheetLine, statModel);
+    initLineScan(sheetLine, statModel, fineStatModel);
   }
   cout << "voice position: " << voicePosition << endl;
   Mat viewPort = sheetLine.getViewPort().clone();
@@ -432,6 +468,7 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
   const Rect relative = sheetLine.getInnerBox() - sheetLine.getBoundingBox().tl();
   rectangle(cont, relative, Scalar(127, 0, 0), 1);
   scanStartOfLine(relative);
+  scanForDiscards(relative);
   scanForNotes(relative);
 
   const std::pair<int, int> tb = sheetLine.getCoordinates();
@@ -451,44 +488,21 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
       case CompositeShape::CompositeType::NOTE:
         colour = Scalar(0, 127, 0); 
         break;
+      case CompositeShape::CompositeType::OUTOFLINE:
+        colour = Scalar(0, 0, 127); 
+        break;
       default: 
         break;
     }
-    rectangle(cont, r, colour, 1);
+    rectangle(cont, r, colour, 2);
   }
 
-  // TODO: scan for notes and note heads, see if they can be
-  // put together with complexes that could be accidentals,
-  // dots, and connector pieces.
-
   SampleData sd;
-  // sd.setPreprocessing(true);  // this does not actually help
   const int slHeight = tb.second - tb.first;
   for (auto& shapeAtX : shapes) {
-    const int xcoord = shapeAtX.first;
     vector<std::unique_ptr<Shape>>& list = shapeAtX.second;
-    if (list.size() > 1) {
-      cout << "There are " << list.size() << " shapes at " << xcoord << endl;
-    }
-
     for (size_t i = 0; i < list.size(); i++) {
-      colour = Scalar(0, 0, 127);
-      const Rect& r = list[i]->getRectangle();
-      Rect insideInnerRect = r & relative;
-      size_t nbcount = list[i]->getNumberOfNeighbours();
       list[i]->print();
-
-      const auto cat = list[i]->getTopLevelCategory();
-      cout << "overall prediction: " << key.getCategoryName(cat) << endl;
-
-      if (fineStatModel && fineStatModel->isTrained()) {
-        Mat partial = Mat(viewPort, r);
-        cv::Mat sample = sd.makeSampleMatrix(partial, r.tl().x, r.tl().y);
-        float prediction = fineStatModel->predict(sample);
-        const TrainingKey::Category cat2 =
-            static_cast<TrainingKey::Category>((int)prediction);
-        cout << "fine model prediction: " << key.getCategoryName(cat2) << endl;
-      } 
 
       // Decide whether to display this or skip it.
       //if (isShapeInComposite(*list[i])) continue;
@@ -496,13 +510,11 @@ void ShapeFinder::scanLine(const SheetLine& sheetLine,
       //  continue;
       // }
 
-      rectangle(cont, r, colour, 2);
+      rectangle(cont, list[i]->getRectangle(), Scalar(0, 0, 0), 2);
       imshow(processedWindowName, cont);
-      Mat partial = Mat(viewPort, r);
+      Mat partial = Mat(viewPort, list[i]->getRectangle());
 
       Mat scaleup;
-      //resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
-      //imshow(questionWindowName, scaleup);
 
       Mat prep = preprocess(partial);
       resize(prep, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
@@ -716,8 +728,15 @@ void Shape::print() const {
   cout << "rectangle: " << rectangle << endl;
   TrainingKey key;
   cout << "tl category: " << key.getCategoryName(getTopLevelCategory()) << endl;
-  for (const auto& b : beliefs) {
-    cout << "is it a " << key.getCategoryName(b.first) << "? " << b.second << endl;
+  cout << "category: " << key.getCategoryName(getCategory()) << endl;
+  for (const auto& nb : neighboursByDirection) {
+    const std::vector<Shape*>& n = nb.second;
+    cout << n.size() << " neighbours in direction " << nb.first
+         << ": ";
+    for (int i = 0; i < n.size(); i++) {
+      cout << n[i]->getCategory() << ", ";
+    }
+    cout << endl;
   }
 }
 
