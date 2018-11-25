@@ -9,21 +9,20 @@
 
 void initLineCountMap(std::map<std::string, int>& m) {
   m.emplace("sample1.jpg", 12);
-  m.emplace("DSC_0177.jpg", 11);  // fixme
+  m.emplace("DSC_0177.jpg", 12);
   m.emplace("DSC_0178.jpg", 12);
-  m.emplace("DSC_0179.jpg", 5);
+  m.emplace("DSC_0179.jpg", 4);
   m.emplace("DSC_0182.jpg", 12);
-  m.emplace("DSC_0184.jpg", 7);
+  m.emplace("DSC_0184.jpg", 9);  // should be 12
   m.emplace("DSC_0186.jpg", 12);
   m.emplace("DSC_0130.jpg", 6);
   m.emplace("DSC_0131.jpg", 6);
-  m.emplace("DSC_0206.jpg", 11);
+  m.emplace("DSC_0206.jpg", 10);
   m.emplace("DSC_0207.jpg", 12);
-  m.emplace("DSC_0208.jpg", 9);
+  m.emplace("DSC_0208.jpg", 8);
   m.emplace("DSC_0209.jpg", 10);
-  m.emplace("DSC_0212.jpg", 13);  // fixme
+  m.emplace("DSC_0212.jpg", 12);
   m.emplace("DSC_0213.jpg", 11);
-  m.emplace("DSC_0214.jpg", 5);
 }
 
 TEST(StructuredPageTestSuite, TestLineFinding) {

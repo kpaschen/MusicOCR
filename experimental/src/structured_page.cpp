@@ -20,7 +20,7 @@ vector<cv::Rect> Sheet::find_lines_outlines(const Mat& processed) const {
   erode(tmp, tmp, horizontalStructure, Point(-1, -1));
   adaptiveThreshold(tmp, tmp, 255, ADAPTIVE_THRESH_GAUSSIAN_C,
                     THRESH_BINARY, 15, -2);
-  GaussianBlur(tmp, tmp, Size(9, 9), 0, 0);
+  GaussianBlur(tmp, tmp, Size(7, 7), 0, 0);
   vector<vector<Point>> contours;
   vector<Vec4i> hierarchy;
   findContours(tmp, contours, hierarchy, RETR_TREE,
@@ -70,7 +70,8 @@ void Sheet::createSheetLines(const vector<Rect>& outlines, const Mat& focused) {
     const int area = r.area();
     // experimentally determined values. These work ok for A4
     // paper with what I'd consider "standard" lining.
-    if (area < 20000 || area > 80000 || r.height < 40) {
+    if (area < 20000 || area > 80000
+        || r.height < 38 || r.width < 500 || r.height > r.width) {
       // Skip this, it's most likely not a sheet line.
       continue;
     }
@@ -80,15 +81,19 @@ void Sheet::createSheetLines(const vector<Rect>& outlines, const Mat& focused) {
   for (const auto& h : horizontal) {
     sheetLines.emplace_back(h, focused);
   }
+  int idx = 0;
   for (auto& sl : sheetLines) {
+    cout << "line " << idx << endl;
+    idx++;
     vector<Vec4i> lines = sl.obtainGridlines();
     sl.accumulateHorizontalLines(lines);
     // xxx not sure if this is pulling its weight.
     const float slope = sl.getSlope();
+    cout << "slope: " << slope << endl;
     if (std::abs(slope) >= 0.025) {
-      //cout << "rotate by " << (std::abs(slope) * 45.0)
-      //     << " degrees " << (slope < 0 ? "counterclockwise"
-      //                        : "clockwise") << endl;
+      cout << "rotate by " << (std::abs(slope) * 45.0)
+           << " degrees " << (slope < 0 ? "counterclockwise"
+                              : "clockwise") << endl;
       sl.rotateViewPort(slope);
       lines = sl.obtainGridlines();
       sl.accumulateHorizontalLines(lines);
