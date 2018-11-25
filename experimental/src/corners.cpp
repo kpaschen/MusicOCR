@@ -155,25 +155,21 @@ std::vector<cv::Point> CornerFinder::find_corners(
   rightLine = getOutline(rightLines, 3, width, height);
 
   const int topLineWidth = std::abs(topLine[0] - topLine[2]);
-  cout << "topline " << topLineWidth << " of " << width << endl;
   if (width / topLineWidth > 18) {
     cout << "top line too short, snapping to edge of paper." << endl;
     topLine = {0, 0, width, 0};
   }
   const int bottomLineWidth = std::abs(bottomLine[0] - bottomLine[2]);
-  cout << "bottomline " << bottomLineWidth << " of " << width << endl;
   if (width / bottomLineWidth > 18) {
     cout << "bottom line too short, snapping to edge of paper." << endl;
     bottomLine = {0, height, width, height};
   }
   const int leftLineHeight = std::abs(leftLine[1] - leftLine[3]);
-  cout << "left " << leftLineHeight << " of " << height << endl;
   if (height / leftLineHeight > 18) {
     cout << "left line too short, snapping to edge of paper." << endl;
     leftLine = {0, 0, 0, height};
   }
   const int rightLineHeight = std::abs(rightLine[1] - rightLine[3]);
-  cout << "right " << rightLineHeight << " of " << height << endl;
   if (height / rightLineHeight > 18) {
     cout << "right line too short, snapping to edge of paper." << endl;
     rightLine = {width, 0, width, height};

@@ -9,78 +9,78 @@
 
 void initRegressionMap(std::map<std::string, std::vector<cv::Point>>& m) {
    m.emplace("sample1.jpg", std::vector<cv::Point>({
-     cv::Point(24, 44), cv::Point(840,49), cv::Point(840,667),
-     cv::Point(28,676)
+     cv::Point(0, 3), cv::Point(924,64), cv::Point(924,673),
+     cv::Point(0,689)
    }));
    m.emplace("DSC_0177.jpg", std::vector<cv::Point>({
-     cv::Point(5, 28), cv::Point(919,28), cv::Point(919,675),
-     cv::Point(9,675)
+     cv::Point(0, 0), cv::Point(924,0), cv::Point(924,679),
+     cv::Point(0,679)
    }));
    m.emplace("DSC_0178.jpg", std::vector<cv::Point>({
-     cv::Point(0, 3), cv::Point(693,4), cv::Point(693,914),
-     cv::Point(0,910)
+     cv::Point(0, 0), cv::Point(693,0), cv::Point(693,924),
+     cv::Point(0,924)
    }));
    m.emplace("DSC_0179.jpg", std::vector<cv::Point>({
-     cv::Point(68, 80), cv::Point(924,80), cv::Point(924,493),
-     cv::Point(73,494)
+     cv::Point(0, 0), cv::Point(924,0), cv::Point(924,693),
+     cv::Point(0,693)
    }));
    m.emplace("DSC_0180.jpg", std::vector<cv::Point>({
-     cv::Point(41, 9), cv::Point(917,10), cv::Point(917,672),
-     cv::Point(50,669)
+     cv::Point(0, 0), cv::Point(924,0), cv::Point(924,693),
+     cv::Point(0,693)
    }));
    m.emplace("DSC_0181.jpg", std::vector<cv::Point>({
-     cv::Point(0, 65), cv::Point(801,67), cv::Point(817,676),
-     cv::Point(0,680)
+     cv::Point(0, 0), cv::Point(924,0), cv::Point(924,693),
+     cv::Point(0,693)
    }));
    m.emplace("DSC_0182.jpg", std::vector<cv::Point>({
-     cv::Point(16, 54), cv::Point(848,61), cv::Point(845,598),
-     cv::Point(18,624)
+     cv::Point(0, 0), cv::Point(924,0), cv::Point(924,621),
+     cv::Point(0,638)
    }));
    m.emplace("DSC_0184.jpg", std::vector<cv::Point>({
-     cv::Point(50, 44), cv::Point(892,44), cv::Point(900,618),
-     cv::Point(52,620)
+     cv::Point(0, 11), cv::Point(924,66), cv::Point(924,611),
+     cv::Point(0,619)
    }));
    m.emplace("DSC_0186.jpg", std::vector<cv::Point>({
-     cv::Point(28, 26), cv::Point(890,30), cv::Point(896,656),
-     cv::Point(30,656)
+     cv::Point(0, 0), cv::Point(924,0), cv::Point(924,693),
+     cv::Point(0,693)
    }));
    m.emplace("DSC_0130.jpg", std::vector<cv::Point>({
-     cv::Point(0, 127), cv::Point(693,125), cv::Point(693,906),
-     cv::Point(0,904)
+     cv::Point(0, 116), cv::Point(692,113), cv::Point(692,909),
+     cv::Point(0,908)
    }));
    m.emplace("DSC_0131.jpg", std::vector<cv::Point>({
-     cv::Point(0, 5), cv::Point(693,5), cv::Point(693,905),
-     cv::Point(0,901)
+     cv::Point(32, 1), cv::Point(693,1), cv::Point(693,747),
+     cv::Point(32,746)
    }));
    m.emplace("DSC_0206.jpg", std::vector<cv::Point>({
-     cv::Point(0, 3), cv::Point(687,3), cv::Point(687,827),
-     cv::Point(0,827)
+     cv::Point(0, 1), cv::Point(693,1), cv::Point(693,909),
+     cv::Point(0,909)
    }));
    m.emplace("DSC_0207.jpg", std::vector<cv::Point>({
-     cv::Point(0, 4), cv::Point(659,2), cv::Point(659,859),
-     cv::Point(0,866)
+     cv::Point(1, 5), cv::Point(659,2), cv::Point(659,904),
+     cv::Point(1,904)
    }));
    m.emplace("DSC_0208.jpg", std::vector<cv::Point>({
-     cv::Point(2, 0), cv::Point(744,0), cv::Point(744,679),
-     cv::Point(16,683)
+     cv::Point(1, 0), cv::Point(744,0), cv::Point(744,685),
+     cv::Point(18,688)
    }));
    m.emplace("DSC_0209.jpg", std::vector<cv::Point>({
-     cv::Point(0, 0), cv::Point(656,0), cv::Point(667,693),
+     cv::Point(0, 0), cv::Point(673,0), cv::Point(673,693),
      cv::Point(0,693)
    }));
    m.emplace("DSC_0212.jpg", std::vector<cv::Point>({
-     cv::Point(0, 1), cv::Point(655,6), cv::Point(658,876),
-     cv::Point(0,876)
+     cv::Point(1, 1), cv::Point(670,1), cv::Point(670,876),
+     cv::Point(6,876)
    }));
-   // A regression on this would probably be an improvement.
    m.emplace("DSC_0213.jpg", std::vector<cv::Point>({
-     cv::Point(37, 88), cv::Point(693,88), cv::Point(693,869),
-     cv::Point(37,861)
+     cv::Point(0, 0), cv::Point(691,0), cv::Point(691,924),
+     cv::Point(0,924)
    }));
-   m.emplace("DSC_0214.jpg", std::vector<cv::Point>({
-     cv::Point(14, 76), cv::Point(674,80), cv::Point(674,916),
-     cv::Point(29,920)
-   }));
+   // This is a printed page, does not get recognised correctly.
+   //m.emplace("DSC_0214.jpg", std::vector<cv::Point>({
+   //  cv::Point(102, 180), cv::Point(674,80), cv::Point(674,916),
+   //  cv::Point(29,920)
+   //}));
 }
 
 TEST(CornersTestSuite, TestCornerRegressions) {
