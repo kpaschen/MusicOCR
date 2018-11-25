@@ -90,6 +90,28 @@ void ShapeFinder::firstPass(const std::vector<cv::Rect>& rectangles,
   }
 }
 
+bool ShapeFinder::isPotentialBarLine(const Shape& s) const {
+  const auto fcat = s.getCategory();
+  if (fcat == TrainingKey::Category::vertical) {
+    return true;
+  } 
+  const auto cat = s.getTopLevelCategory();
+  if (cat == TrainingKey::TopLevelCategory::vline) {
+    return true;
+  }
+  if (cat == TrainingKey::TopLevelCategory::composite ||
+      fcat == TrainingKey::Category::multiple) {
+    const Rect& r = s.getRectangle();
+    const int height = r.br().y - r.tl().y;
+    const int width = r.br().x - r.tl().x;
+    if ((float)height / width >= 3.5f) {
+      // probably a vertical line. other vertical lines can be included
+      // in larger composites, but won't be identified here.
+      return true;
+    }
+  }
+}
+
 void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
                                   const cv::Rect& relativeInnerBox,
                                   const std::pair<int, int>& slCoords) {
@@ -101,38 +123,18 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
 
   // First, look for voice connectors (long bar lines).
   map<int, int> positions;
-  bool haveFirstVline = false;
   for (const auto& siter : shapes) {
     const int xcoord = siter.first;
     const vector<std::unique_ptr<Shape>>& list = siter.second;
     for (size_t i = 0; i < list.size(); i++) {
-      const Rect& r = list[i]->getRectangle();
-      const auto cat = list[i]->getTopLevelCategory();
-      const auto fcat = list[i]->getCategory();
-      const int height = r.br().y - r.tl().y;
-      bool processThis = false;
-      if (fcat == TrainingKey::Category::vertical) {
-        processThis = true;
-        haveFirstVline = true;
-      } else if (cat == TrainingKey::TopLevelCategory::composite) {
-        const int width = r.br().x - r.tl().x;
-        if (height / width >= 3) {
-          // probably a vertical line. other vertical lines can be included
-          // in larger composites, but won't be identified here.
-          processThis = true;
-        } else if (!haveFirstVline && xcoord < 30) {
-          processThis = true;
-        }
-        haveFirstVline = true;
-      } else if (cat == TrainingKey::TopLevelCategory::vline) {
-        processThis = true;
-        haveFirstVline = true;
+      if (!isPotentialBarLine(*list[i])) {
+        continue;
       }
-      if (!processThis) continue;
+      const Rect& r = list[i]->getRectangle();
       bool aboveTop = r.tl().y < topEdge;
       bool belowBottom = r.br().y > bottomEdge;
       int position = -1;
-      if (height > slHeight + 20) {
+      if (r.height > slHeight + 20) {
         if (!aboveTop && belowBottom) { position = 1; }  // top voice
         else if (aboveTop && belowBottom) { position = 2; } // middle voice
         else if (aboveTop && !belowBottom) { position = 3; }  // bottom voice
@@ -167,10 +169,7 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
       if (pos == positions.end()) continue;
       vector<std::unique_ptr<Shape>>& list = siter.second;
       for (size_t i = 0; i < list.size(); i++) {
-        const auto cat = list[i]->getTopLevelCategory();
-        if (cat == TrainingKey::TopLevelCategory::vline ||
-            cat == TrainingKey::TopLevelCategory::composite ||
-            list[i]->getCategory() == TrainingKey::Category::vertical) {
+        if (isPotentialBarLine(*list[i])) {
           cout << "adding bar line at " << xcoord << endl;
           barLines.emplace(xcoord, list[i].get());
         }
@@ -179,81 +178,49 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
   } else {
 
   // Is this a single voice line? Then we don't have any bar lines yet.
-  haveFirstVline = false;
 
-  // Look for the rightmost x coordinate of a vertical line or composite.
+  // Find right edge of used shape.
   int lastXCoord = -1;
   for (auto cr = shapes.crbegin(); cr != shapes.crend(); ++cr) {
     const vector<std::unique_ptr<Shape>>& list = cr->second;
     for (size_t i = 0; i < list.size(); i++) {
-      const auto cat = list[i]->getTopLevelCategory();
-      if (cat == TrainingKey::TopLevelCategory::vline || 
-          cat == TrainingKey::TopLevelCategory::composite ||
-          list[i]->getCategory() == TrainingKey::Category::vertical) {
-        lastXCoord = cr->first;
-        break;
-      }
+      const Rect& r = list[i]->getRectangle();
+      const Rect insideInnerRect = r & relativeInnerBox;
+      if (insideInnerRect.area() == 0) continue;
+      lastXCoord = cr->first;
+      break;
     }
     if (lastXCoord != -1) break;
   }
+
+  int previousBarline = -1;
   for (const auto& siter : shapes) {
     const int xcoord = siter.first;
-    if (xcoord < leftEdge) continue;
-    if (xcoord > rightEdge) break;
     const vector<std::unique_ptr<Shape>>& list = siter.second;
     for (size_t i = 0; i < list.size(); i++) {
-      const auto cat = list[i]->getTopLevelCategory();
-      if (cat != TrainingKey::TopLevelCategory::vline &&
-          cat != TrainingKey::TopLevelCategory::composite && 
-          list[i]->getCategory() != TrainingKey::Category::vertical) continue;
-      const Rect& r = list[i]->getRectangle();
-      const Rect insideInnerRect = r & relativeInnerBox;
-   
-      if (insideInnerRect.area() == 0) continue;
+      if (!isPotentialBarLine(*list[i])) { continue; }
 
-      // There might be something else there besides the bar line
-      // but there's certainly the end of a bar.
-      if (xcoord == lastXCoord) {
-//        cout << "end of line barline at " << xcoord << endl;
+      if (previousBarline == -1 && xcoord < 20) {
+        // this is probably a bar line
         barLines.emplace(xcoord, list[i].get());
+        previousBarline = xcoord;
+        continue;
+      }
+
+      if (xcoord == lastXCoord) {
+        // this is probably a bar line, unless we've placed one
+        // not too far left of this already.
+        if (xcoord - previousBarline >= 40) {
+          barLines.emplace(xcoord, list[i].get());
+          previousBarline = xcoord;
+        }
         break;
       }
 
-      if (cat == TrainingKey::TopLevelCategory::composite) {
-        const int width = r.br().x - r.tl().x;
-        const int height = r.br().y - r.tl().y;
-        if ((float)height / width < 3.5f) {
-          continue;
-        }
-      }
+      const Rect& r = list[i]->getRectangle();
+      const Rect insideInnerRect = r & relativeInnerBox;
+      if (insideInnerRect.area() < r.area()/2 ) continue;
 
-      if (!haveFirstVline && xcoord < 30) {
-        bool isFirstVline = true;
-        for (const auto& s : shapes) {
-          if (s.first > xcoord) { break; }
-          for (const auto& sh : s.second) {
-            const auto& otherRect = sh->getRectangle();
-            if (otherRect.tl() == r.tl()) { break; }
-            const int area = (otherRect & relativeInnerBox).area();
-            if (area == 0) { continue; }
-            const auto cat2 = sh->getTopLevelCategory();
-            if (cat2 == TrainingKey::TopLevelCategory::vline ||
-                cat2 == TrainingKey::TopLevelCategory::composite ||
-                sh->getCategory() == TrainingKey::Category::vertical) {
-              isFirstVline = false;
-              break;
-            }
-            if (!isFirstVline) break;
-          }
-          if (!isFirstVline) break;
-        }
-        if (isFirstVline) {
-          //cout << "beginning of line barline: " << xcoord << endl;
-          barLines.emplace(xcoord, list[i].get());
-          haveFirstVline = true;
-          continue;
-        }
-      }
       const int height = r.br().y - r.tl().y;
       // right height?
       if (height < slHeight - 6) {
@@ -271,9 +238,7 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
         if (nb.first == Shape::IN || nb.first == Shape::AROUND) { continue; }
         if (nb.first == Shape::E || nb.first == Shape::W) { continue; }
         for (const auto& sp : nb.second) {
-          const auto cat = sp->getTopLevelCategory();
-          if (cat == TrainingKey::TopLevelCategory::round ||
-              cat == TrainingKey::TopLevelCategory::hline) {
+          if (sp->getCategory() == TrainingKey::Category::notehead) {
             noteNeck = true;
             break;
           }
@@ -282,8 +247,8 @@ void ShapeFinder::scanForBarLines(const cv::Mat& viewPort,
       }
       if (noteNeck) continue;
       // Still here? Then it's probably a bar line.
-      //cout << "conditions met for barline: " << xcoord << endl;
       barLines.emplace(xcoord, list[i].get());
+      previousBarline = xcoord;
     }
   }
   // Thin out the bar lines. Assume the first bar line is correct
@@ -406,38 +371,26 @@ void ShapeFinder::scanStartOfLine(const Rect& relativeInnerBox) {
   // (possibly a double line with repeat signs, etc) just before the
   // actual music notes begin.
 
-  // This method should be called after bar lines have been identified.
-
-  // 'state machine': 
-  // -1: starting state
-  // 1: have found bar line
-  // 2: have found potential clef
-  // 3: have found clef followed by complex that could be time
-  // 4: have found things followed by complex that could be accidentals
-  // 5: have found things followed by complex that could be wide bar line
-  int state = -1;
-  for (const auto& siter : shapes) {
-    // skip items before left edge of bounding box
-    if (siter.first < (relativeInnerBox.tl().x - 2)) continue;
-    // Arbitrary: 'start' of line does not go farther than this.
-    // TODO: this needs to be fixed for in-between changes in clef etc.
-    if (siter.first >= 100) return;
-    // Finding a note head signals we're past the start of line.
-    const vector<std::unique_ptr<Shape>>& list = siter.second;
-    for (size_t i = 0; i < list.size(); i++) {
-      const auto cat = list[i]->getTopLevelCategory();
-      if (cat == TrainingKey::TopLevelCategory::round &&
-          list[i]->getRectangle().area() >= 50) {
-        return;
+  // First, see if we have a first bar line or still need to look for one
+  int barline_length_max = 0;
+  int first_barline_x = -1;
+  for (const auto& citer : compositeShapes) {
+    if (citer->getType() == CompositeShape::CompositeType::BARLINE) {
+      if (first_barline_x == -1) {
+        first_barline_x = citer->getRectangle().tl().x;
       }
-      // TODO: need to train ocr or cascade to recognise clefs
-      // For now, look for things that are 'complex' and the right size.
-      if (cat == TrainingKey::TopLevelCategory::composite) {
-        cout << "composite found at " << siter.first
-             << "with size " << list[i]->getRectangle() << endl;
-      }
+      const int height = citer->getRectangle().height;
+      if (height > barline_length_max) barline_length_max = height;
     }
   }
+  if (first_barline_x > -1) {
+    cout << "max bar line height: " << barline_length_max << endl;
+    cout << "first bar line at : " << first_barline_x << endl;
+  } else {
+    cout << "no bar lines found yet." << endl;
+  }
+
+  // xxx
 }
 
 bool ShapeFinder::isShapeInComposite(const Shape& s) const {

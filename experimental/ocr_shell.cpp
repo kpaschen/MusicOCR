@@ -54,7 +54,7 @@ int aAddMe = 0;
 // inputmatrix.cols / edHorizontalSizeFudge
 int edHorizontalSizeFudge = 30;
 int edHorizontalHeight = 1;
-int edVerticalSizeFudge = 30;  // 7 is good for finding mainly the bars
+int edVerticalSizeFudge = 30;
 int edVerticalWidth = 1;
 
 void correctConfig() {
@@ -469,8 +469,8 @@ void navigateSheet() {
           }
  
           musicocr::Scanner scanner;
-          sheetLine.getShapeFinder().scanLine(sheetLine, statModel, fineStatModel, scanner,
-            "Processed", "What is this?");
+          sheetLine.getShapeFinder().scanLine(sheetLine, statModel,
+             fineStatModel, scanner, "Processed", "What is this?");
         }
       break;
       case 'q': 
@@ -639,6 +639,19 @@ void processImage() {
               Scalar(255, 0, 0), 1);
        }
        imshow("Processed", cdst);
+     }
+     break;
+     case 'm': // sobel gradients
+     {
+       cout << "sobel gradients" << endl;
+       // Focused should be blurred and grayscale
+       cv::Mat gradX, gradY, absGradX, absGradY;
+       cv::Sobel(processed, gradX, CV_16S, 1, 0, 3, 1, 0, BORDER_DEFAULT);
+       cv::Sobel(processed, gradY, CV_16S, 0, 1, 3, 1, 0, BORDER_DEFAULT);
+       cv::convertScaleAbs(gradX, absGradX);
+       cv::convertScaleAbs(gradY, absGradY);
+       cv::addWeighted(absGradX, 0.5, absGradY, 0.5, 0, processed);
+       imshow("Processed", processed);
      }
      break;
      case 'r': // reset

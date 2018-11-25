@@ -136,6 +136,8 @@ class ShapeFinder {
                   const cv::Ptr<cv::ml::StatModel>& statModel,
                   const cv::Ptr<cv::ml::StatModel>& fineStatModel);
 
+   bool isPotentialBarLine(const Shape& s) const;
+
    void scanForBarLines(const cv::Mat& viewPort,
                         const cv::Rect& relativeInnerBox,
                         const std::pair<int, int>& slCoords); 

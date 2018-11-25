@@ -10,17 +10,21 @@ using namespace std;
 using namespace cv;
 
 std::vector<cv::Vec4i> CornerFinder::find_lines(const cv::Mat& image) const {
-  // Input is expected to be a grayscale image.
   Mat tmp;
-  GaussianBlur(image, tmp, Size(config.gaussianKernel, config.gaussianKernel),
-               0, 0);
-  threshold(tmp, tmp, config.thresholdValue, 255, config.thresholdType);
-  Canny(tmp, tmp, config.cannyMin, config.cannyMax, config.sobelKernel,
-        config.l2gradient);
+  GaussianBlur(image, tmp, Size(15, 15), 0, 0);
 
+  // This isn't terribly different from running Canny.
+  cv::Mat gradX, gradY, absGradX, absGradY;
+  cv::Sobel(tmp, gradX, CV_16S, 1, 0, 3, 1, 0, BORDER_DEFAULT);
+  cv::Sobel(tmp, gradY, CV_16S, 0, 1, 3, 1, 0, BORDER_DEFAULT);
+  cv::convertScaleAbs(gradX, absGradX);
+  cv::convertScaleAbs(gradY, absGradY);
+  cv::addWeighted(absGradX, 0.5, absGradY, 0.5, 0, tmp);
+
+  Canny(tmp, tmp, 60, 114, config.sobelKernel,
+        config.l2gradient);
   vector<Vec4i> lines;
-  HoughLinesP(tmp, lines, 1, CV_PI/180.0, config.houghThreshold,
-               config.houghMinLinLength, config.houghMaxLineGap);
+  HoughLinesP(tmp, lines, 1, CV_PI/180.0, 100, 50, config.houghMaxLineGap);
   tmp.release();
 
   return lines;
@@ -121,7 +125,6 @@ std::vector<cv::Point> CornerFinder::find_corners(
     const std::vector<cv::Vec4i>& lines, int width, int height) const {
   std::vector<cv::Vec4i> bottomLines, topLines,
                          leftLines, rightLines;
-  std::vector<cv::Vec4i> verticalLines;
 
   const float thirdHeight = (float)height / 3.0;
   const float bottomThird = (float)height - thirdHeight;
@@ -152,21 +155,25 @@ std::vector<cv::Point> CornerFinder::find_corners(
   rightLine = getOutline(rightLines, 3, width, height);
 
   const int topLineWidth = std::abs(topLine[0] - topLine[2]);
+  cout << "topline " << topLineWidth << " of " << width << endl;
   if (width / topLineWidth > 18) {
     cout << "top line too short, snapping to edge of paper." << endl;
     topLine = {0, 0, width, 0};
   }
   const int bottomLineWidth = std::abs(bottomLine[0] - bottomLine[2]);
+  cout << "bottomline " << bottomLineWidth << " of " << width << endl;
   if (width / bottomLineWidth > 18) {
     cout << "bottom line too short, snapping to edge of paper." << endl;
     bottomLine = {0, height, width, height};
   }
   const int leftLineHeight = std::abs(leftLine[1] - leftLine[3]);
+  cout << "left " << leftLineHeight << " of " << height << endl;
   if (height / leftLineHeight > 18) {
     cout << "left line too short, snapping to edge of paper." << endl;
     leftLine = {0, 0, 0, height};
   }
   const int rightLineHeight = std::abs(rightLine[1] - rightLine[3]);
+  cout << "right " << rightLineHeight << " of " << height << endl;
   if (height / rightLineHeight > 18) {
     cout << "right line too short, snapping to edge of paper." << endl;
     rightLine = {width, 0, width, height};
