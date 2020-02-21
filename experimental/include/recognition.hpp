@@ -10,7 +10,7 @@ namespace musicocr {
 
 class Scanner {
   public:
-    void process(const cv::Mat&) const;  
+    void process(const cv::Mat&) const {}
 };
 
 }  // namespace musicocr
