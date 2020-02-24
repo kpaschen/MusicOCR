@@ -442,6 +442,7 @@ void navigateSheet() {
         sprintf(responseFileName, "training/data/responses.%s.%d",
                 filename.c_str(), lineIndex);
         // this will overwrite the file if it exists.
+	cout << "opening file " << responseFileName << " for responses." << endl;
         responseStream.open(responseFileName);
         musicocr::ShapeFinder shapeFinder(config);
         shapeFinder.getTrainingDataForLine(
