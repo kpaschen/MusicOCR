@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <map>
+#include <string>
 #include <vector>
 #include <opencv2/ml.hpp>
 #include <opencv2/opencv.hpp>
@@ -18,7 +19,8 @@ class SampleData {
     cv::Mat makeSampleMatrix(const cv::Mat&, int xcoord, int ycoord) const;
 
     // Add one image and corresponding label.
-    void addTrainingData(const cv::Mat&, int label, int xcoord, int ycoord);
+    // Also adds base filename as metadata for debugging.
+    void addTrainingData(const cv::Mat&, int label, int xcoord, int ycoord, const std::string& basename);
 
     void setPreprocessing(bool prep) { preprocess = prep; }
 
@@ -55,6 +57,7 @@ class SampleData {
 
     // accumulate features and labels in these internally.
     cv::Mat features, labels;
+    std::vector<std::string> filenames;
 };
 
 }  // namespace musicocr

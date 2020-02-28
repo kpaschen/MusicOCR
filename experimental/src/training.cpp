@@ -34,9 +34,13 @@ Mat SampleData::makeSampleMatrix(const Mat& smat, int xcoord, int ycoord) const 
 }
 
 void SampleData::addTrainingData(const cv::Mat& smat, int label,
-                                 int xcoord, int ycoord) {
-  features.push_back(makeSampleMatrix(smat, xcoord, ycoord));
+                                 int xcoord, int ycoord,
+				 const string& basename) {
+  Mat bla = makeSampleMatrix(smat, xcoord, ycoord);
+  // std::cout << "Matrix for " << basename << "(" << label << "):" << std::endl << bla << std::endl << std::endl;
+  features.push_back(bla);
   labels.push_back(label);
+  filenames.push_back(basename);
 }
 
 bool SampleData::isReadyToTrain() const {
@@ -97,12 +101,12 @@ int SampleData::runClassifier(cv::Ptr<cv::ml::DTrees> model,
                               std::ostream& out) const {
   if (!isReadyToRun()) { return 0; }
   size_t sameLabel = 0;
-  out << "index, expected, predicted" << std::endl;
+  out << "index, expected, predicted, filename" << std::endl;
   for (size_t i = 0; i < features.rows; i++) {
     const Mat& row = features.row(i);
     float response = model->predict(row);
     int expected = labels.at<int>(0, i);
-    out << i << ", " << expected << ", " << (int)response << std::endl;
+    out << i << ", " << expected << ", " << (int)response << ", " << filenames[i] << std::endl;
     outcomes.push_back(response);
     if ((int)response == expected) {
       sameLabel++;

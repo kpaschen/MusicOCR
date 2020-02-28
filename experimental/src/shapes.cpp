@@ -591,7 +591,15 @@ void ShapeFinder::getTrainingDataForLine(const Mat& focused,
     // horizontal dilate/erode, subtract, threshold, invert seems to be ok-ish?
 
     // Scaling up more just makes the image too blurry.
-    resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
+    // resize(partial, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
+    Mat horizontalStructure = getStructuringElement(cv::MORPH_RECT, cv::Size(10, 1));
+    Mat tmp;
+    dilate(partial, tmp, horizontalStructure, cv::Point(-1, -1));
+    erode(tmp, tmp, horizontalStructure, cv::Point(-1, -1));
+    tmp = partial + ~tmp;
+    threshold(tmp, tmp, 0.0f, 255, 12);
+    tmp = ~tmp;
+    resize(tmp, scaleup, Size(), 2.0, 2.0, INTER_CUBIC);
 
     imshow(questionWindowName, scaleup);
 
@@ -684,10 +692,11 @@ void Shape::print() const {
   cout << "category: " << key.getCategoryName(getCategory()) << endl;
   for (const auto& nb : neighboursByDirection) {
     const std::vector<Shape*>& n = nb.second;
-    cout << n.size() << " neighbours in direction " << nb.first
+    cout << n.size() << " neighbours in direction " << getNeighbourhoodName(nb.first)
          << ": ";
     for (int i = 0; i < n.size(); i++) {
-      cout << n[i]->getCategory() << ", ";
+      cout << key.getCategoryName(n[i]->getTopLevelCategory()) << "-"
+	   << key.getCategoryName(n[i]->getCategory()) << ", ";
     }
     cout << endl;
   }

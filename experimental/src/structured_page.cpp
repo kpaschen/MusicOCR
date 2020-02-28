@@ -160,7 +160,7 @@ void SheetLine::accumulateHorizontalLines(const vector<Vec4i>& lines) {
 
   // Too few inner lines.
   if (innerLines.size() < minHorizontalLines) {
-    cout << "only " << innerLines.size() << " lines inside inner box" << endl;
+    cout << "only " << innerLines.size() << " lines inside inner box, need " << minHorizontalLines << endl;
     realMusicLine = false;
     return;
   }
@@ -199,7 +199,7 @@ void SheetLine::accumulateHorizontalLines(const vector<Vec4i>& lines) {
   }
 
   if (horizontals.size() < minHorizontalLines) {
-    cout << "only " << horizontals.size() << " lines after merging" << endl;
+    cout << "only " << horizontals.size() << " lines after merging, want " << minHorizontalLines << endl;
     realMusicLine = false;
     return;
   }
@@ -220,12 +220,12 @@ void SheetLine::accumulateHorizontalLines(const vector<Vec4i>& lines) {
     if (candidate[2] > bestRight) bestRight = candidate[2];
   }
   if (goodLines.size() < minHorizontalLines) {
-    cout << "too few lines after grouping" << endl;
+    cout << "too few lines after grouping ( " << goodLines.size() << " vs " << minHorizontalLines << ")" << endl;
     realMusicLine = false;
     return;
   }
-  if (std::abs(goodLines[0][1] - goodLines.back()[1]) < 25) {
-    cout << "total height not enough" << endl;
+  if (std::abs(goodLines[0][1] - goodLines.back()[1]) < 15) {
+    cout << "total height not enough (" << goodLines[0][1] << " vs " << goodLines.back()[1] << ")" << endl;
     realMusicLine = false;
     return;
   }

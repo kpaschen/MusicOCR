@@ -172,8 +172,7 @@ void SampleDataFiles::initCollector(const string& dirname,
         cv::Mat smat = cv::imread(rfilename, 0);
 
         // Add smat and linelabels[j] to data collector
-        collector.addTrainingData(smat, linelabels[j],
-                                  coords.first, coords.second);
+        collector.addTrainingData(smat, linelabels[j], coords.first, coords.second, rfilename);
       }
     }
   }

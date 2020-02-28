@@ -185,6 +185,25 @@ class Shape {
      UNKNOWN, N, NE, E, SE, S, SW, W, NW, IN, AROUND, INTERSECT
    };
 
+   // This is just for diagnostic output.
+   static const string getNeighbourhoodName(const Neighbourhood in) {
+     switch(in) {
+       case UNKNOWN: return "unknown";
+       case N: return "N";
+       case NE: return "NE";
+       case E: return "E";		
+       case SE: return "SE";
+       case S: return "S";
+       case SW: return "SW";
+       case W: return "W";
+       case NW: return "NW";
+       case IN: return "IN";
+       case AROUND: return "around";
+       case INTERSECT: return "intersect";
+       default: return "illegal";
+     }
+   }
+
    // Decide if shape is adjacent to this and add it if so.
    void maybeAddNeighbour(Shape* shape);
 

@@ -38,6 +38,7 @@ int main(int argc, char** argv) {
   }
 
   musicocr::SampleData collector, collector_fine;
+  collector_fine.setPreprocessing(true);
   musicocr::SampleDataFiles files, files_fine;
   files.readFiles(directory, filenamepattern, musicocr::TrainingKey::statmodel);
   files_fine.readFiles(directory, filenamepattern, musicocr::TrainingKey::basic);
